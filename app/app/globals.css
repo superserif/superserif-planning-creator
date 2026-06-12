@@ -1,0 +1,47 @@
+@import url('https://rsms.me/inter/inter.css');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'InterVariable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans--font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+
+  /* Palette — Airbnb-derived world */
+  --color-ink: #222222;
+  --color-charcoal: #3f3f3f;
+  --color-ash: #6a6a6a;
+  --color-mute: #929292;
+  --color-stone: #c1c1c1;
+  --color-hairline: #dddddd;
+  --color-cloud: #f7f7f7;
+  --color-rausch: #ff385c;
+  --color-rausch-deep: #e00b41;
+  --color-leaf: #0a8a5f;
+  --color-sky: #428bff;
+  --color-sky-deep: #1d63d8;
+  --color-alert: #c13515;
+
+  /* Signature three-layer elevation */
+  --shadow-float:
+    0 0 0 1px rgb(0 0 0 / 0.02), 0 2px 6px 0 rgb(0 0 0 / 0.04),
+    0 4px 8px 0 rgb(0 0 0 / 0.1);
+}
+
+body {
+  color: var(--color-ink);
+  background: #ffffff;
+  font-weight: 500;
+}
+
+.bar-handle {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
