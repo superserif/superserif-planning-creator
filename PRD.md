@@ -163,7 +163,17 @@ Validé en cours de build avec JJ, remplace les sections 5–7 sur ces points :
 
 **Raccourcis.** `⌘P` : nouveau projet (un mois, centre de la vue). `⌘K` : focus recherche.
 
-## 13. Critères de done
+## 13. Avenant v1.2 — charge et capacité
+
+**Capacité par personne.** Chaque membre a un maximum de projets actifs simultanés (statuts Devisé et Démarré ; Terminé et Archivé ne pèsent pas). Par défaut : JJ 4, Sylvain 3, Kiks 4 — réglable dans le panneau « Le studio » (steppers, 1–8). À saturation sur une période : le `+` du groupe est grisé avec tooltip « Nombre de projets max atteint », les miniatures de la personne sont grisées avec tooltip dans le popover d'assignation, et la création par double-clic est bloquée avec toast.
+
+**Jauges de charge.** À côté de chaque nom : une jauge grise qui se remplit en vert selon la charge sur la **fenêtre visible** (elle vit pendant le pan), avec le compte `n/max`. Dans le header de la grille : le pourcentage de charge global du studio (somme des charges / somme des capacités) sur la même fenêtre, en rouge à 100 %+.
+
+**Navigation.** Clic sur le mois courant dans le header → liste déroulante des 36 mois de la plage pour sauter directement.
+
+**Statuts.** « À démarrer » supprimé — le cycle devient : Devisé → Démarré → Terminé → Archivé.
+
+## 14. Critères de done
 
 1. Je crée un projet par double-clic, le nomme, le déplace et l'étire — sans jamais voir un formulaire.
 2. Les cinq statuts sont lisibles d'un coup d'œil à 2 m de l'écran.

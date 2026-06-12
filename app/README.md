@@ -33,6 +33,8 @@ La vue couvre trois mois par défaut, centrée sur aujourd'hui, sur une plage co
 - **Renommer** : double-clic sur la barre.
 - **Supprimer** : touche Suppr sur la barre sélectionnée — annulable depuis le toast.
 - **Rechercher** : `⌘K`, ou les filtres personne/statut.
+- **Charge** : chaque personne a une capacité max de projets actifs simultanés (réglable dans « Le studio ») ; jauges par personne et % studio calculés sur la fenêtre visible ; à saturation, création et assignation sont bloquées sur la période.
+- **Sauter à un mois** : clic sur le mois courant dans le header.
 
 Les portraits de l'équipe vivent dans `public/portrait-*.png` et sont référencés par `people.avatar`.
 
