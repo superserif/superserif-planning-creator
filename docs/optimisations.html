@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Lineup — 25 pistes d'optimisation</title>
+<style>
+  @import url('https://rsms.me/inter/inter.css');
+
+  @page { size: A4; margin: 18mm 16mm; }
+
+  :root {
+    --ink: #222222;
+    --charcoal: #3f3f3f;
+    --ash: #6a6a6a;
+    --mute: #929292;
+    --hairline: #dddddd;
+    --cloud: #f7f7f7;
+    --rausch: #ff385c;
+    --leaf: #0a8a5f;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'InterVariable', 'Inter', -apple-system, system-ui, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    color: var(--ink);
+    font-size: 9.5pt;
+    font-weight: 500;
+    line-height: 1.42;
+  }
+
+  /* ---- cover ---- */
+  .cover {
+    height: 254mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    page-break-after: always;
+  }
+  .cover .wordmark { font-size: 16pt; font-weight: 650; letter-spacing: -0.01em; }
+  .cover .wordmark span { color: var(--rausch); }
+  .cover h1 {
+    font-size: 34pt;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+    max-width: 24ch;
+  }
+  .cover .sub { margin-top: 14pt; font-size: 12pt; color: var(--ash); max-width: 52ch; }
+  .cover .meta { font-size: 9pt; color: var(--mute); display: flex; gap: 18pt; }
+
+  /* ---- sections ---- */
+  section { page-break-before: always; }
+  section:first-of-type { page-break-before: avoid; }
+  .kicker {
+    font-size: 8pt;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 6pt;
+  }
+  h2 {
+    font-size: 17pt;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    margin-bottom: 4pt;
+  }
+  .lede { color: var(--ash); margin-bottom: 10pt; max-width: 62ch; }
+
+  figure { margin: 9pt auto 10pt; width: 64%; page-break-inside: avoid; }
+  figure img {
+    width: 100%;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    display: block;
+  }
+  figcaption { margin-top: 4pt; font-size: 8.5pt; color: var(--mute); }
+
+  .idea {
+    display: grid;
+    grid-template-columns: 26pt 1fr;
+    gap: 0 10pt;
+    padding: 6pt 0;
+    border-top: 1px solid rgba(0,0,0,0.08);
+    page-break-inside: avoid;
+  }
+  .idea .num {
+    font-size: 14pt;
+    font-weight: 650;
+    color: var(--mute);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.3;
+  }
+  .idea h3 { font-size: 11.5pt; font-weight: 650; letter-spacing: -0.01em; margin-bottom: 2pt; }
+  .idea p { color: var(--charcoal); max-width: 70ch; }
+  .idea .effort {
+    display: inline-block;
+    margin-left: 6pt;
+    vertical-align: 1pt;
+    font-size: 7.5pt;
+    font-weight: 650;
+    color: var(--ash);
+    border: 1px solid var(--hairline);
+    border-radius: 99px;
+    padding: 1pt 6pt;
+    letter-spacing: 0.02em;
+  }
+
+  .closing { page-break-before: always; }
+  .closing h2 { margin-bottom: 10pt; }
+  .closing p { max-width: 64ch; color: var(--charcoal); margin-bottom: 8pt; }
+  .closing .prio { margin-top: 14pt; padding: 12pt 14pt; background: var(--cloud); border-radius: 10px; }
+  .closing .prio p { margin-bottom: 4pt; }
+  .closing .prio strong { font-weight: 650; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <p class="wordmark">Lineup<span>.</span></p>
+  <div>
+    <h1>25 pistes d'optimisation pour le planning du studio</h1>
+    <p class="sub">L'outil fait déjà le travail : l'année, les personnes, la charge, la manipulation directe. Ce document liste ce qui le ferait passer d'outil interne correct à outil qu'on n'a plus envie de quitter — classé en cinq territoires, du plus collectif au plus mécanique.</p>
+  </div>
+  <p class="meta"><span>Superserif</span><span>12 juin 2026</span><span>v1.3 en production — superserif-planning-creator.vercel.app</span></p>
+</div>
+
+<!-- ============ A. ÉQUIPE ============ -->
+<section>
+  <p class="kicker">01 — Outil d'équipe</p>
+  <h2>Travailler à trois dessus, vraiment</h2>
+  <p class="lede">Aujourd'hui l'outil est multi-mains (Realtime) mais mono-identité : un seul compte, aucune trace de qui fait quoi. Ces cinq pistes le transforment en lieu de travail commun.</p>
+
+  <figure>
+    <img src="../screenshots/lineup-rules-tooltip.png" alt="Vue actuelle : groupes par personne, jauges de charge, capacité atteinte" />
+    <figcaption>L'état actuel : groupes par personne, jauges de charge sur la fenêtre visible, blocage à saturation.</figcaption>
+  </figure>
+
+  <div class="idea"><span class="num">01</span><div>
+    <h3>Comptes individuels et présence live <span class="effort">moyen</span></h3>
+    <p>Un compte par membre (l'auth Supabase est déjà en place, il manque les utilisateurs). En bonus immédiat : les avatars de ceux qui regardent le planning en ce moment, affichés dans le header, et la barre qu'un collègue déplace légèrement teintée pendant son drag.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">02</span><div>
+    <h3>Plusieurs personnes sur un projet <span class="effort">moyen</span></h3>
+    <p>Un shooting ou un site se fait rarement seul. Permettre 2–3 assignés par projet (avatars empilés au début de la barre), avec un poids partagé dans les jauges : un projet à deux compte 0,5 dans la charge de chacun.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">03</span><div>
+    <h3>Notes courtes par projet <span class="effort">moyen</span></h3>
+    <p>Un fil minimal dans le popover — trois lignes, pas un Slack. « Brief reçu », « En attente retour client depuis le 4 ». Une pastille discrète sur la barre signale qu'une note existe. C'est la mémoire de l'équipe au moment du point hebdo.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">04</span><div>
+    <h3>Digest du lundi matin <span class="effort">petit</span></h3>
+    <p>Un message Slack (ou email) automatique : ce qui démarre cette semaine, ce qui devait finir et ne l'est pas, qui dépasse 80 % de charge. Une Edge Function Supabase + un cron — le planning vient à l'équipe au lieu d'attendre qu'on l'ouvre.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">05</span><div>
+    <h3>Lien de partage lecture seule <span class="effort">petit</span></h3>
+    <p>Un lien signé, sans login, qui montre une vue filtrée — par exemple uniquement les projets d'un client, sans les noms des autres. Utile pour donner de la visibilité à Moon-Moon sur leurs projets sans ouvrir tout le planning du studio.</p>
+  </div></div>
+</section>
+
+<!-- ============ B. LECTURE ============ -->
+<section>
+  <p class="kicker">02 — Lecture &amp; densité</p>
+  <h2>Lire l'année d'un coup d'œil</h2>
+  <p class="lede">La vue trois mois est le bon défaut. Mais selon la question qu'on se pose — « cette semaine ? », « cet automne ? », « qui est libre en septembre ? » — la bonne focale change.</p>
+
+  <figure>
+    <img src="../screenshots/lineup-v2-03-collapsed.png" alt="Groupe replié avec représentation miniature des barres" />
+    <figcaption>Les miniatures de groupe replié existent déjà — la base d'une lecture à plusieurs altitudes.</figcaption>
+  </figure>
+
+  <div class="idea"><span class="num">06</span><div>
+    <h3>Zoom à trois crans <span class="effort">moyen</span></h3>
+    <p>Semaine / trimestre / année au pinch trackpad ou <strong>⌘ +/−</strong>, ré-ancré sur le centre de la vue. La mécanique existe déjà (le dayWidth est une variable) ; il manque le geste et la transition animée entre les crans.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">07</span><div>
+    <h3>Sparkline de charge annuelle <span class="effort">moyen</span></h3>
+    <p>Sous le header des mois, une fine courbe du % studio jour par jour sur toute la plage. Les creux d'août et les bosses de novembre deviennent visibles sans naviguer — et cliquer sur la courbe saute à la date.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">08</span><div>
+    <h3>Jours fériés et congés <span class="effort">moyen</span></h3>
+    <p>Week-ends légèrement teintés, fériés français marqués, et des absences par personne (hachures dans son groupe) qui se déduisent de sa capacité sur la période. Une jauge honnête est une jauge qui sait que Kiks est aux Baléares.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">09</span><div>
+    <h3>Mode compact <span class="effort">petit</span></h3>
+    <p>Un toggle de densité : lignes à 32 px au lieu de 48, typo un cran plus petite. Quand le studio aura 25 projets actifs, voir tout le monde sans scroller vaudra le compromis de confort.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">10</span><div>
+    <h3>Regrouper par client <span class="effort">moyen</span></h3>
+    <p>Les noms suivent déjà la convention « Type — Client ». Un second mode de groupement (par client plutôt que par personne) répond à l'autre question récurrente : « où en est tout ce qu'on fait pour X ? »</p>
+  </div></div>
+</section>
+
+<!-- ============ C. MICRO-INTERACTIONS ============ -->
+<section>
+  <p class="kicker">03 — Micro-interactions</p>
+  <h2>La manipulation directe, jusqu'au bout</h2>
+  <p class="lede">Le principe fondateur de l'outil est qu'aucune action courante ne passe par un formulaire. Il reste des gestes naturels que la grille ne comprend pas encore.</p>
+
+  <figure>
+    <img src="../screenshots/lineup-dup-01.png" alt="Deux cases du même projet sur une ligne après duplication" />
+    <figcaption>La duplication v1.3 : les cases d'un même projet partagent leur ligne.</figcaption>
+  </figure>
+
+  <div class="idea"><span class="num">11</span><div>
+    <h3>Drag vertical pour réassigner <span class="effort">moyen</span></h3>
+    <p>Glisser une barre du groupe JJ vers le groupe Sylvain devrait changer l'assigné — avec un fantôme de la barre, le groupe cible surligné, et le refus animé si Sylvain est au max. C'est le geste le plus demandé par la logique même de la vue.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">12</span><div>
+    <h3>Aimantation entre cases <span class="effort">petit</span></h3>
+    <p>Pendant un drag, quand le bord d'une case approche le bord d'une autre sur la même ligne, un snap magnétique les colle bord à bord (J+1) avec un micro-rebond. Enchaîner des phases devient un geste d'une seconde.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">13</span><div>
+    <h3>Multi-sélection <span class="effort">grand</span></h3>
+    <p>Shift-clic sur plusieurs barres (ou lasso sur la grille), puis déplacement en bloc, suppression groupée, ou changement de statut commun. Indispensable le jour où un client décale tout son projet d'un mois.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">14</span><div>
+    <h3>Undo / redo global <span class="effort">moyen</span></h3>
+    <p><strong>⌘Z</strong> ne couvre aujourd'hui que la suppression (via le toast). Une pile d'opérations couvrant drags, resizes, statuts et créations enlèverait la dernière peur de manipuler vite — condition du « ultra simple à utiliser ».</p>
+  </div></div>
+
+  <div class="idea"><span class="num">15</span><div>
+    <h3>L'odomètre des projets livrés <span class="effort">petit</span></h3>
+    <p>Le burst vert du passage en Terminé est la seule célébration du système — bien. La prolonger d'un compteur annuel discret dans le header (« 23 livrés en 2026 ») qui s'incrémente en roulant à chaque burst : la gratification gagne une mémoire.</p>
+  </div></div>
+</section>
+
+<!-- ============ D. FLUX ============ -->
+<section>
+  <p class="kicker">04 — Flux &amp; raccourcis</p>
+  <h2>Aller plus vite que la souris</h2>
+  <p class="lede">Les raccourcis existants (⌘P, ⌘K, ⌘D, Suppr) dessinent déjà un usage clavier. Cinq pistes pour finir le travail.</p>
+
+  <figure>
+    <img src="../screenshots/lineup-dup-03-hover.png" alt="Survol d'une ligne : icônes dupliquer et supprimer" />
+    <figcaption>Le survol v1.3 : dupliquer et supprimer apparaissent en stagger sur la ligne.</figcaption>
+  </figure>
+
+  <div class="idea"><span class="num">16</span><div>
+    <h3>⌘K en palette de commandes <span class="effort">moyen</span></h3>
+    <p>La recherche actuelle ne filtre que les noms. En faire une vraie palette : « aller à septembre », « nouveau projet pour Kiks », « filtrer Moon-Moon », « passer [projet] en Démarré ». Un seul point d'entrée clavier pour tout l'outil.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">17</span><div>
+    <h3>Créer au cliquer-glisser <span class="effort">petit</span></h3>
+    <p>Le double-clic crée un mois fixe. Un cliquer-glisser horizontal sur une zone vide devrait dessiner la barre à la durée voulue, dates affichées en live pendant le geste — comme on trace un rectangle dans Figma.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">18</span><div>
+    <h3>Dates au clavier <span class="effort">petit</span></h3>
+    <p>Case sélectionnée : <strong>←/→</strong> déplace d'un jour, <strong>⌥ ←/→</strong> ajuste la fin, <strong>⇧</strong> par semaine. Le réglage fin qui suit toujours un drag approximatif, sans reprendre la souris.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">19</span><div>
+    <h3>Modèles de projet <span class="effort">moyen</span></h3>
+    <p>Les récurrents du studio — « Kit UI Shopify, 3 semaines, Moon-Moon », « Identité, 6 semaines » — en templates : durée, statut, tag et personne pré-remplis. Disponibles depuis le + d'un groupe et la palette ⌘K.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">20</span><div>
+    <h3>Saisie directe des dates <span class="effort">petit</span></h3>
+    <p>Dans le popover, les dates sont affichées mais pas éditables. Un champ « 12 juin → 30 juin » cliquable, qui comprend aussi « +2s » ou « fin août », pour les cas où l'on connaît la date exacte sans vouloir la viser au pixel.</p>
+  </div></div>
+</section>
+
+<!-- ============ E. PILOTAGE ============ -->
+<section>
+  <p class="kicker">05 — Pilotage du studio</p>
+  <h2>Du planning à l'outil de gestion</h2>
+  <p class="lede">La donnée est déjà là : dates, statuts, personnes, capacités, tag agence. Il manque les vues qui la transforment en décisions.</p>
+
+  <figure>
+    <img src="../screenshots/lineup-cap-03-popover.png" alt="Popover projet : statuts, assignation avec capacité, actions" />
+    <figcaption>Le popover concentre déjà statut, assignation et capacité — la matière première du pilotage.</figcaption>
+  </figure>
+
+  <div class="idea"><span class="num">21</span><div>
+    <h3>Alerte de surcharge à venir <span class="effort">petit</span></h3>
+    <p>Le % studio existe sur la fenêtre visible ; le projeter sur les 12 prochaines semaines et signaler en amont celle qui dépasse 90 % (point rouge sur le mois dans le picker). On corrige un planning trois semaines avant, pas le lundi même.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">22</span><div>
+    <h3>Jours-homme par projet <span class="effort">moyen</span></h3>
+    <p>Un champ optionnel « jours vendus » par projet, comparé aux jours calendaires de la barre. L'écart vendu/planifié par personne et par mois est la donnée qui manque à chaque devis suivant.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">23</span><div>
+    <h3>Bilan annuel <span class="effort">moyen</span></h3>
+    <p>Une page simple, générée depuis les données : projets livrés par personne, durée moyenne par type, part Moon-Moon vs direct, taux de glissement (dates initiales vs réelles). Export CSV pour la compta. C'est la rétro de janvier, sans tableur.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">24</span><div>
+    <h3>Rangement automatique <span class="effort">petit</span></h3>
+    <p>Les Terminé de plus de 60 jours encombrent les lignes. Un encart discret « 6 projets à archiver » avec action en un clic (et undo) — la grille reste un plan de travail, pas une archive.</p>
+  </div></div>
+
+  <div class="idea"><span class="num">25</span><div>
+    <h3>Démarrage automatique <span class="effort">petit</span></h3>
+    <p>Option par projet : le jour J de sa date de début, un Devisé passe tout seul en Démarré — avec une notification du digest (idée 04) pour confirmer ou décaler. Le planning cesse de mentir par oubli.</p>
+  </div></div>
+</section>
+
+<!-- ============ CLOSING ============ -->
+<section class="closing">
+  <p class="kicker">Et maintenant</p>
+  <h2>Par où commencer</h2>
+  <p>Tout ne se vaut pas. Le critère : ce qui renforce le geste fondateur (manipuler le temps directement) passe avant ce qui ajoute des écrans.</p>
+  <div class="prio">
+    <p><strong>Le trio à fort levier, petit effort</strong> — 12 (aimantation), 17 (créer au glisser), 18 (dates au clavier) : trois gestes, zéro écran nouveau, l'outil devient nettement plus précis en quelques jours de dev.</p>
+    <p><strong>Le chantier structurant</strong> — 11 (drag vertical pour réassigner) + 14 (undo global) : les deux manques que la main rencontre déjà aujourd'hui.</p>
+    <p><strong>Le pari équipe</strong> — 01 (comptes individuels) + 04 (digest du lundi) : ce qui fait passer Lineup de « l'outil de JJ » à l'outil du studio.</p>
+  </div>
+  <p style="margin-top:14pt; color:var(--mute); font-size:9pt;">Lineup v1.3 — document généré le 12 juin 2026 · Superserif</p>
+</section>
+
+</body>
+</html>
