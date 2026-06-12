@@ -17,6 +17,9 @@ export interface Project {
   person_id: string | null;
   /** Tag agence Moon-Moon */
   moonmoon?: boolean;
+  /** Heures consommées / vendues — alimentées plus tard par l'API */
+  hours_done?: number | null;
+  hours_total?: number | null;
 }
 
 export interface StatusSpec {
@@ -32,23 +35,23 @@ export interface StatusSpec {
 }
 
 /**
- * The lifecycle as a color narrative: a quote is only an outline,
- * committed work turns pale blue, live work carries the single accent,
- * finished work turns green, archived work fades out.
+ * The lifecycle as a color narrative: not-started is only a dashed outline,
+ * live work is solid ink (or Moon-Moon lime), finished work turns green,
+ * archived work fades out.
  */
 export const STATUSES: Record<Status, StatusSpec> = {
   devise: {
-    label: "Devisé",
-    bar: "bg-white text-ink outline -outline-offset-1 outline-hairline",
-    dot: "bg-white outline -outline-offset-1 outline-stone",
-    mini: "bg-white outline -outline-offset-1 outline-stone",
+    label: "Non démarré",
+    bar: "bg-black/4 text-ash outline-dashed -outline-offset-1 outline-1 outline-stone",
+    dot: "bg-black/8 outline-dashed -outline-offset-1 outline-1 outline-stone",
+    mini: "bg-stone/50",
     outsideText: "text-ash",
   },
   demarre: {
-    label: "Démarré",
-    bar: "bg-rausch text-white",
-    dot: "bg-rausch",
-    mini: "bg-rausch",
+    label: "En cours",
+    bar: "bg-ink text-white",
+    dot: "bg-ink",
+    mini: "bg-ink",
     outsideText: "text-ink",
   },
   termine: {
@@ -66,5 +69,18 @@ export const STATUSES: Record<Status, StatusSpec> = {
     outsideText: "text-mute",
   },
 };
+
+/** Moon-Moon swaps the "En cours" ink for the agency lime. */
+export function barSpec(project: Project): StatusSpec {
+  if (project.status === "demarre" && project.moonmoon) {
+    return {
+      ...STATUSES.demarre,
+      bar: "bg-mmlime text-ink",
+      dot: "bg-mmlime outline -outline-offset-1 outline-black/15",
+      mini: "bg-mmlime outline -outline-offset-1 outline-black/10",
+    };
+  }
+  return STATUSES[project.status];
+}
 
 export const STATUS_ORDER: Status[] = ["devise", "demarre", "termine", "archive"];

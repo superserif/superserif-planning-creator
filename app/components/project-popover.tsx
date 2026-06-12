@@ -48,12 +48,20 @@ export default function ProjectPopover({
     });
   }, []);
 
+  // close on outside interaction without a backdrop, so the grid stays live
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [onClose]);
+
   const left = Math.min(Math.max(8, x - WIDTH / 2), window.innerWidth - WIDTH - 8);
   const top = Math.min(y + 8, window.innerHeight - 380);
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onPointerDown={onClose} />
       <div
         ref={panelRef}
         role="dialog"
@@ -163,19 +171,19 @@ export default function ProjectPopover({
           </label>
         </div>
 
-        <div className="flex border-t border-black/6 pt-1">
+        <div className="flex flex-col gap-1.5 border-t border-black/6 p-2 pb-1">
           <button
             type="button"
             onClick={onDuplicate}
             title="⌘D"
-            className="flex-1 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-cloud focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink"
+            className="w-full rounded-lg py-2 text-center text-sm font-semibold outline -outline-offset-1 outline-hairline hover:bg-cloud focus-visible:outline-2 focus-visible:outline-ink"
           >
             Dupliquer
           </button>
           <button
             type="button"
             onClick={onDelete}
-            className="flex-1 rounded-lg px-2 py-1.5 text-left text-sm text-alert hover:bg-cloud focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink"
+            className="w-full rounded-lg py-2 text-center text-sm font-semibold text-alert outline -outline-offset-1 outline-alert/25 hover:bg-alert/5 focus-visible:outline-2 focus-visible:outline-alert"
           >
             Supprimer
           </button>

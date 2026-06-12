@@ -4,19 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Person, Project, Status } from "@/lib/types";
 import { createStore, type Store, type StoreData } from "@/lib/store";
 import { getSupabase } from "@/lib/supabase-client";
+import { useReadOnly } from "@/lib/read-only";
 import {
   clamp,
   dayIndex,
   daysInRange,
+  formatDay,
   formatMonthYear,
   isoFromDay,
   monthSpansRange,
   shiftIso,
   todayIso,
 } from "@/lib/dates";
-import { isAtCapacity } from "@/lib/capacity";
+import { isAtCapacity, studioLoadPct } from "@/lib/capacity";
 import { celebrateAt } from "@/lib/motion";
-import AppHeader, { type MonthOption } from "@/components/app-header";
+import AppHeader, { type MonthOption, type OverloadAlert } from "@/components/app-header";
 import FilterBar from "@/components/filter-bar";
 import Gantt, { type GanttGroup, type GanttHandle } from "@/components/gantt";
 import ProjectPopover from "@/components/project-popover";
@@ -31,9 +33,17 @@ export interface PopoverState {
   y: number;
 }
 
+/** One atomic edit on the project list — before/after pairs, undoable. */
+interface Change {
+  id: string;
+  before: Project | null;
+  after: Project | null;
+}
+
 export default function LineupApp() {
   const [store] = useState<Store>(createStore);
   const [rangeStartYear] = useState(() => new Date().getFullYear() - 1);
+  const readOnly = useReadOnly();
 
   const [data, setData] = useState<StoreData>({ projects: [], people: [] });
   const [loaded, setLoaded] = useState(false);
@@ -41,7 +51,7 @@ export default function LineupApp() {
   const [filterStatus, setFilterStatus] = useState<Status | "">("");
   const [filterMoonmoon, setFilterMoonmoon] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -52,6 +62,8 @@ export default function LineupApp() {
 
   const ganttRef = useRef<GanttHandle>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const undoStackRef = useRef<Change[][]>([]);
+  const redoStackRef = useRef<Change[][]>([]);
 
   const reload = useCallback(async () => {
     try {
@@ -81,7 +93,7 @@ export default function LineupApp() {
     };
   }, [store, reload]);
 
-  /* ----- project actions, all optimistic ----- */
+  /* ----- the single mutation path: optimistic, persisted, undoable ----- */
 
   const persist = useCallback(
     (op: () => Promise<void>) => {
@@ -93,48 +105,99 @@ export default function LineupApp() {
     [reload],
   );
 
-  const upsertLocal = useCallback((p: Project) => {
-    setData((d) => {
-      const i = d.projects.findIndex((x) => x.id === p.id);
-      const projects =
-        i >= 0
-          ? d.projects.map((x) => (x.id === p.id ? p : x))
-          : [...d.projects, p];
-      return { ...d, projects };
+  const commit = useCallback(
+    (changes: Change[], record = true) => {
+      if (changes.length === 0) return;
+      setData((d) => {
+        let projects = d.projects;
+        for (const c of changes) {
+          projects = projects.filter((p) => p.id !== c.id);
+          if (c.after) projects = [...projects, c.after];
+        }
+        return { ...d, projects };
+      });
+      persist(async () => {
+        for (const c of changes) {
+          if (c.after) await store.upsertProject(c.after);
+          else await store.deleteProject(c.id);
+        }
+      });
+      if (record) {
+        undoStackRef.current.push(changes);
+        if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+        redoStackRef.current = [];
+      }
+    },
+    [store, persist],
+  );
+
+  const undo = useCallback(() => {
+    const changes = undoStackRef.current.pop();
+    if (!changes) return;
+    commit(
+      changes.map((c) => ({ id: c.id, before: c.after, after: c.before })),
+      false,
+    );
+    redoStackRef.current.push(changes);
+    setEditingId(null);
+    setPopover(null);
+  }, [commit]);
+
+  const redo = useCallback(() => {
+    const changes = redoStackRef.current.pop();
+    if (!changes) return;
+    commit(changes, false);
+    undoStackRef.current.push(changes);
+  }, [commit]);
+
+  const findProject = useCallback(
+    (id: string) => data.projects.find((p) => p.id === id),
+    [data.projects],
+  );
+
+  const updateProject = useCallback(
+    (after: Project) => {
+      const before = findProject(after.id) ?? null;
+      commit([{ id: after.id, before, after }]);
+    },
+    [findProject, commit],
+  );
+
+  /* ----- creation ----- */
+
+  const capacityToast = useCallback((person: Person) => {
+    setToast({
+      message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
     });
   }, []);
 
-  const createProject = useCallback(
-    (startDay: number, personId: string | null) => {
+  const createRange = useCallback(
+    (startDay: number, endDay: number, personId: string | null) => {
       const total = daysInRange(rangeStartYear, YEAR_COUNT);
-      const start = clamp(startDay, 0, total - NEW_PROJECT_DAYS);
+      const start = clamp(Math.min(startDay, endDay), 0, total - 1);
+      const end = clamp(Math.max(startDay, endDay), start, total - 1);
+      const startIso = isoFromDay(rangeStartYear, start);
+      const endIso = isoFromDay(rangeStartYear, end);
       if (personId) {
         const person = data.people.find((p) => p.id === personId);
-        if (
-          person &&
-          isAtCapacity(
-            data.projects,
-            person,
-            isoFromDay(rangeStartYear, start),
-            isoFromDay(rangeStartYear, start + NEW_PROJECT_DAYS - 1),
-          )
-        ) {
-          setToast({
-            message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
-          });
+        if (person && isAtCapacity(data.projects, person, startIso, endIso)) {
+          capacityToast(person);
           return;
         }
       }
       const project: Project = {
         id: crypto.randomUUID(),
         name: "",
-        start_date: isoFromDay(rangeStartYear, start),
-        end_date: isoFromDay(rangeStartYear, start + NEW_PROJECT_DAYS - 1),
+        start_date: startIso,
+        end_date: endIso,
         status: "devise",
         person_id: personId,
+        moonmoon: false,
+        hours_done: 0,
+        hours_total: null,
       };
-      upsertLocal(project);
-      setSelectedId(project.id);
+      commit([{ id: project.id, before: null, after: project }]);
+      setSelectedIds(new Set([project.id]));
       setEditingId(project.id);
       setBornId(project.id);
       setPopover(null);
@@ -146,9 +209,14 @@ export default function LineupApp() {
           return next;
         });
       }
-      persist(() => store.upsertProject(project));
     },
-    [rangeStartYear, store, upsertLocal, persist, data.people, data.projects],
+    [rangeStartYear, data.people, data.projects, commit, capacityToast],
+  );
+
+  const createProject = useCallback(
+    (startDay: number, personId: string | null) =>
+      createRange(startDay, startDay + NEW_PROJECT_DAYS - 1, personId),
+    [createRange],
   );
 
   /** New project centered on the current view, one month long. */
@@ -161,34 +229,27 @@ export default function LineupApp() {
     [createProject, rangeStartYear],
   );
 
-  const updateProject = useCallback(
-    (p: Project) => {
-      upsertLocal(p);
-      persist(() => store.upsertProject(p));
-    },
-    [store, upsertLocal, persist],
-  );
+  /* ----- edit actions ----- */
 
   const commitName = useCallback(
     (id: string, name: string) => {
-      const project = data.projects.find((p) => p.id === id);
+      const project = findProject(id);
       if (!project) return;
       const trimmed = name.trim();
       if (!trimmed) {
         // a nameless new project dies quietly
-        setData((d) => ({ ...d, projects: d.projects.filter((p) => p.id !== id) }));
-        persist(() => store.deleteProject(id));
-      } else {
+        commit([{ id, before: project, after: null }]);
+      } else if (trimmed !== project.name) {
         updateProject({ ...project, name: trimmed });
       }
       setEditingId(null);
     },
-    [data.projects, store, updateProject, persist],
+    [findProject, commit, updateProject],
   );
 
   const setStatus = useCallback(
     (id: string, status: Status, origin?: { x: number; y: number }) => {
-      const project = data.projects.find((p) => p.id === id);
+      const project = findProject(id);
       if (!project || project.status === status) {
         setPopover(null);
         return;
@@ -199,12 +260,12 @@ export default function LineupApp() {
         void celebrateAt(origin.x, origin.y);
       }
     },
-    [data.projects, updateProject],
+    [findProject, updateProject],
   );
 
   const assignPerson = useCallback(
     (id: string, personId: string | null) => {
-      const project = data.projects.find((p) => p.id === id);
+      const project = findProject(id);
       if (!project) return;
       if (personId) {
         const person = data.people.find((p) => p.id === personId);
@@ -212,21 +273,28 @@ export default function LineupApp() {
           person &&
           isAtCapacity(data.projects, person, project.start_date, project.end_date, id)
         ) {
-          setToast({
-            message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
-          });
+          capacityToast(person);
           return;
         }
       }
       updateProject({ ...project, person_id: personId });
     },
-    [data.projects, data.people, updateProject],
+    [findProject, data.people, data.projects, updateProject, capacityToast],
   );
 
-  /** Duplicate: the copy lands right after the original, same row (same name). */
+  const toggleMoonmoon = useCallback(
+    (id: string) => {
+      const project = findProject(id);
+      if (!project) return;
+      updateProject({ ...project, moonmoon: !project.moonmoon });
+    },
+    [findProject, updateProject],
+  );
+
+  /** Duplicate: the copy lands right after the original, on its own row. */
   const duplicateProject = useCallback(
     (id: string) => {
-      const project = data.projects.find((p) => p.id === id);
+      const project = findProject(id);
       if (!project) return;
       const duration =
         dayIndex(project.end_date, rangeStartYear) -
@@ -237,9 +305,7 @@ export default function LineupApp() {
       if (project.person_id) {
         const person = data.people.find((p) => p.id === project.person_id);
         if (person && isAtCapacity(data.projects, person, start, end)) {
-          setToast({
-            message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
-          });
+          capacityToast(person);
           return;
         }
       }
@@ -249,72 +315,117 @@ export default function LineupApp() {
         start_date: start,
         end_date: end,
       };
-      upsertLocal(copy);
-      setSelectedId(copy.id);
+      commit([{ id: copy.id, before: null, after: copy }]);
+      setSelectedIds(new Set([copy.id]));
       setBornId(copy.id);
       setPopover(null);
-      persist(() => store.upsertProject(copy));
     },
-    [data.projects, data.people, rangeStartYear, store, upsertLocal, persist],
+    [findProject, data.people, data.projects, rangeStartYear, commit, capacityToast],
   );
 
-  const toggleMoonmoon = useCallback(
-    (id: string) => {
-      const project = data.projects.find((p) => p.id === id);
-      if (!project) return;
-      updateProject({ ...project, moonmoon: !project.moonmoon });
-    },
-    [data.projects, updateProject],
-  );
-
-  /** Delete a whole row (all duplicates of a project), one undo for the lot. */
   const removeProjects = useCallback(
     (ids: string[]) => {
       const removed = data.projects.filter((p) => ids.includes(p.id));
       if (removed.length === 0) return;
-      setData((d) => ({
-        ...d,
-        projects: d.projects.filter((p) => !ids.includes(p.id)),
-      }));
+      commit(removed.map((p) => ({ id: p.id, before: p, after: null })));
       setPopover(null);
-      setSelectedId(null);
-      persist(async () => {
-        for (const p of removed) await store.deleteProject(p.id);
-      });
+      setSelectedIds(new Set());
       setToast({
         message:
-          removed.length > 1 ? `${removed.length} cases supprimées` : "Projet supprimé",
+          removed.length > 1 ? `${removed.length} projets supprimés` : "Projet supprimé",
         actionLabel: "Annuler",
-        onAction: () => {
-          removed.forEach((p) => upsertLocal(p));
-          persist(async () => {
-            for (const p of removed) await store.upsertProject(p);
-          });
-        },
+        onAction: undo,
       });
     },
-    [data.projects, store, upsertLocal, persist],
+    [data.projects, commit, undo],
   );
 
-  const removeProject = useCallback(
-    (id: string) => {
-      const project = data.projects.find((p) => p.id === id);
+  /** End of a bar drag: shift dates (batch when multi-selected), maybe reassign. */
+  const handleMoveDrop = useCallback(
+    (id: string, delta: number, targetGroupKey: string | null) => {
+      const project = findProject(id);
       if (!project) return;
-      setData((d) => ({ ...d, projects: d.projects.filter((p) => p.id !== id) }));
-      setPopover(null);
-      setSelectedId(null);
-      persist(() => store.deleteProject(id));
-      setToast({
-        message: "Projet supprimé",
-        actionLabel: "Annuler",
-        onAction: () => {
-          upsertLocal(project);
-          persist(() => store.upsertProject(project));
-        },
+
+      const targetPerson =
+        targetGroupKey && targetGroupKey !== "none"
+          ? (data.people.find((p) => p.id === targetGroupKey) ?? null)
+          : null;
+      const reassignTo =
+        targetGroupKey === "none" && project.person_id
+          ? null
+          : targetPerson && targetPerson.id !== project.person_id
+            ? targetPerson.id
+            : undefined; // undefined = no reassign
+
+      if (reassignTo !== undefined) {
+        const start = shiftIso(project.start_date, delta);
+        const end = shiftIso(project.end_date, delta);
+        if (reassignTo) {
+          const person = data.people.find((p) => p.id === reassignTo)!;
+          if (isAtCapacity(data.projects, person, start, end, id)) {
+            capacityToast(person);
+            return; // the bar springs back
+          }
+        }
+        updateProject({
+          ...project,
+          start_date: start,
+          end_date: end,
+          person_id: reassignTo,
+        });
+        return;
+      }
+
+      if (delta === 0) return;
+      const batch =
+        selectedIds.has(id) && selectedIds.size > 1 ? [...selectedIds] : [id];
+      const changes: Change[] = [];
+      for (const pid of batch) {
+        const p = findProject(pid);
+        if (!p) continue;
+        changes.push({
+          id: pid,
+          before: p,
+          after: {
+            ...p,
+            start_date: shiftIso(p.start_date, delta),
+            end_date: shiftIso(p.end_date, delta),
+          },
+        });
+      }
+      commit(changes);
+    },
+    [findProject, data.people, data.projects, selectedIds, updateProject, commit, capacityToast],
+  );
+
+  const handleResize = useCallback(
+    (id: string, deltaStart: number, deltaEnd: number) => {
+      const project = findProject(id);
+      if (!project || (deltaStart === 0 && deltaEnd === 0)) return;
+      updateProject({
+        ...project,
+        start_date: shiftIso(project.start_date, deltaStart),
+        end_date: shiftIso(project.end_date, deltaEnd),
       });
     },
-    [data.projects, store, upsertLocal, persist],
+    [findProject, updateProject],
   );
+
+  const toggleSelect = useCallback((id: string, additive: boolean) => {
+    setSelectedIds((prev) => {
+      if (additive) {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }
+      // grabbing an already-selected bar keeps the batch (for block moves)
+      return prev.has(id) ? prev : new Set([id]);
+    });
+    if (additive) setPopover(null);
+  }, []);
+
+  /* ----- people ----- */
 
   const addPerson = useCallback(
     (name: string) => {
@@ -360,47 +471,82 @@ export default function LineupApp() {
     [store, persist, filterPerson],
   );
 
+  /* ----- share link ----- */
+
+  const shareLink = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { data: row, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "share_secret")
+      .single();
+    if (error || !row) {
+      setToast({ message: "Impossible de générer le lien" });
+      return;
+    }
+    const url = `${window.location.origin}/?partage=${encodeURIComponent(btoa(row.value))}`;
+    await navigator.clipboard.writeText(url);
+    setToast({ message: "Lien de lecture seule copié" });
+  }, []);
+
   /* ----- keyboard ----- */
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.repeat) {
-        if (e.key.toLowerCase() === "p") {
-          e.preventDefault();
-          addProjectAtCenter(null);
-          return;
-        }
-        if (e.key.toLowerCase() === "k") {
-          e.preventDefault();
-          searchRef.current?.focus();
-          searchRef.current?.select();
-          return;
-        }
-        if (e.key.toLowerCase() === "d" && selectedId) {
-          e.preventDefault();
-          duplicateProject(selectedId);
-          return;
-        }
-      }
       const target = e.target as HTMLElement;
       const typing =
         target.tagName === "INPUT" ||
         target.tagName === "TEXTAREA" ||
         target.tagName === "SELECT";
+      if ((e.metaKey || e.ctrlKey) && !e.repeat && !typing) {
+        const key = e.key.toLowerCase();
+        if (key === "p" && !readOnly) {
+          e.preventDefault();
+          addProjectAtCenter(null);
+          return;
+        }
+        if (key === "k") {
+          e.preventDefault();
+          searchRef.current?.focus();
+          searchRef.current?.select();
+          return;
+        }
+        if (key === "d" && !readOnly && selectedIds.size > 0) {
+          e.preventDefault();
+          [...selectedIds].forEach((id) => duplicateProject(id));
+          return;
+        }
+        if (key === "z" && !readOnly) {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+          return;
+        }
+      }
       if (e.key === "Escape") {
         setPopover(null);
-        if (!typing) setSelectedId(null);
+        if (!typing) setSelectedIds(new Set());
         return;
       }
-      if (typing || editingId) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+      if (typing || editingId || readOnly) return;
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.size > 0) {
         e.preventDefault();
-        removeProject(selectedId);
+        removeProjects([...selectedIds]);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editingId, removeProject, addProjectAtCenter, duplicateProject]);
+  }, [
+    selectedIds,
+    editingId,
+    readOnly,
+    removeProjects,
+    addProjectAtCenter,
+    duplicateProject,
+    undo,
+    redo,
+  ]);
 
   /* ----- derived ----- */
 
@@ -463,6 +609,37 @@ export default function LineupApp() {
     return span?.monthIndex ?? 12;
   }, [rangeStartYear, centerDay]);
 
+  /** Delivered this calendar year — feeds the header odometer. */
+  const delivered = useMemo(() => {
+    const year = String(rangeStartYear + 1);
+    return data.projects.filter(
+      (p) => p.status === "termine" && p.end_date.startsWith(year),
+    ).length;
+  }, [data.projects, rangeStartYear]);
+
+  /** Worst week over the next 12 — the overload warning next to the logo. */
+  const overload = useMemo<OverloadAlert | null>(() => {
+    const start = dayIndex(todayIso(), rangeStartYear);
+    let worst: OverloadAlert | null = null;
+    for (let w = 0; w < 12; w++) {
+      const a = start + w * 7;
+      const pct = studioLoadPct(
+        data.projects,
+        data.people,
+        isoFromDay(rangeStartYear, a),
+        isoFromDay(rangeStartYear, a + 6),
+      );
+      if (pct > 90 && (!worst || pct > worst.pct)) {
+        worst = {
+          pct,
+          day: a,
+          label: `Semaine du ${formatDay(isoFromDay(rangeStartYear, a))} — ${pct} %`,
+        };
+      }
+    }
+    return worst;
+  }, [data.projects, data.people, rangeStartYear]);
+
   const popoverProject = popover
     ? (data.projects.find((p) => p.id === popover.projectId) ?? null)
     : null;
@@ -473,11 +650,16 @@ export default function LineupApp() {
         centerLabel={centerLabel}
         months={months}
         currentMonthIndex={currentMonthIndex}
+        delivered={delivered}
+        overload={overload}
+        readOnly={readOnly}
+        onOverloadClick={(day) => ganttRef.current?.scrollToDay(day)}
         onPickMonth={(day) => ganttRef.current?.scrollToDay(day)}
         onPrevMonth={() => ganttRef.current?.scrollByMonths(-1)}
         onNextMonth={() => ganttRef.current?.scrollByMonths(1)}
         onToday={() => ganttRef.current?.scrollToToday()}
-        onAddProject={() => addProjectAtCenter(null)}
+        onAddProject={readOnly ? undefined : () => addProjectAtCenter(null)}
+        onShare={store.mode === "supabase" && !readOnly ? () => void shareLink() : undefined}
         onLogout={
           store.mode === "supabase"
             ? () => void getSupabase()?.auth.signOut()
@@ -492,6 +674,7 @@ export default function LineupApp() {
         onFilterMoonmoon={setFilterMoonmoon}
         search={search}
         localMode={store.mode === "local"}
+        readOnly={readOnly}
         searchRef={searchRef}
         onFilterPerson={setFilterPerson}
         onFilterStatus={setFilterStatus}
@@ -508,10 +691,11 @@ export default function LineupApp() {
         visibleIds={visibleIds}
         filtersActive={filtersActive}
         closedGroups={closedGroups}
-        selectedId={selectedId}
+        selectedIds={selectedIds}
         editingId={editingId}
         bornId={bornId}
         loaded={loaded}
+        readOnly={readOnly}
         onToggleGroup={(key) =>
           setClosedGroups((s) => {
             const next = new Set(s);
@@ -522,20 +706,15 @@ export default function LineupApp() {
         }
         onBornConsumed={() => setBornId(null)}
         onCreate={createProject}
-        onSelect={(id) => setSelectedId(id)}
+        onCreateRange={createRange}
+        onToggleSelect={toggleSelect}
         onOpenPopover={(projectId, x, y) => {
-          setSelectedId(projectId);
+          if (readOnly) return;
+          setSelectedIds((prev) => (prev.has(projectId) ? prev : new Set([projectId])));
           setPopover({ projectId, x, y });
         }}
-        onDatesChange={(id, deltaStart, deltaEnd) => {
-          const project = data.projects.find((p) => p.id === id);
-          if (!project || (deltaStart === 0 && deltaEnd === 0)) return;
-          updateProject({
-            ...project,
-            start_date: shiftIso(project.start_date, deltaStart),
-            end_date: shiftIso(project.end_date, deltaEnd),
-          });
-        }}
+        onMoveDrop={handleMoveDrop}
+        onResize={handleResize}
         onStartRename={(id) => {
           setEditingId(id);
           setPopover(null);
@@ -548,7 +727,7 @@ export default function LineupApp() {
           setCenterDay(day);
         }}
       />
-      {popoverProject && popover && (
+      {popoverProject && popover && !readOnly && (
         <ProjectPopover
           project={popoverProject}
           people={data.people}
@@ -571,7 +750,7 @@ export default function LineupApp() {
           onAssign={(personId) => assignPerson(popoverProject.id, personId)}
           onDuplicate={() => duplicateProject(popoverProject.id)}
           onToggleMoonmoon={() => toggleMoonmoon(popoverProject.id)}
-          onDelete={() => removeProject(popoverProject.id)}
+          onDelete={() => removeProjects([popoverProject.id])}
         />
       )}
       <Toast toast={toast} onDone={() => setToast(null)} />

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { animate, spring } from "animejs";
 import type { Person, Project } from "@/lib/types";
-import { STATUSES } from "@/lib/types";
+import { barSpec } from "@/lib/types";
 import { clamp, dayIndex, formatDay, shiftIso } from "@/lib/dates";
 import { reducedMotion, ringAt } from "@/lib/motion";
 import Avatar from "@/components/avatar";
@@ -13,9 +13,12 @@ type DragMode = "move" | "resize-l" | "resize-r";
 interface DragState {
   mode: DragMode;
   dx: number;
+  dy: number;
   moved: boolean;
   pointer: { x: number; y: number };
 }
+
+const SNAP_RANGE = 2; // days of magnetism toward a neighbour's edge
 
 export default function GanttBar({
   project,
@@ -23,13 +26,16 @@ export default function GanttBar({
   rangeStartYear,
   totalDays,
   dayWidth,
+  snapStarts,
   selected,
   editing,
   born,
+  readOnly,
   onBornConsumed,
   onSelect,
   onOpenPopover,
-  onDatesChange,
+  onMoveDrop,
+  onResize,
   onStartRename,
   onCommitName,
 }: {
@@ -38,18 +44,29 @@ export default function GanttBar({
   rangeStartYear: number;
   totalDays: number;
   dayWidth: number;
+  /** day indexes the bar's start magnetises to (neighbours' end + 1) */
+  snapStarts: number[];
   selected: boolean;
   editing: boolean;
   born: boolean;
+  readOnly: boolean;
   onBornConsumed: () => void;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onOpenPopover: (x: number, y: number) => void;
-  onDatesChange: (deltaStart: number, deltaEnd: number) => void;
+  /** end of a body drag: day delta + the group key under the pointer (vertical reassign) */
+  onMoveDrop: (deltaDays: number, targetGroupKey: string | null) => void;
+  onResize: (deltaStart: number, deltaEnd: number) => void;
   onStartRename: () => void;
   onCommitName: (name: string) => void;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
-  const downRef = useRef<{ x: number; mode: DragMode; moved: boolean } | null>(null);
+  const downRef = useRef<{
+    x: number;
+    y: number;
+    mode: DragMode;
+    moved: boolean;
+    additive: boolean;
+  } | null>(null);
   const snapRef = useRef(0);
   const clickTimerRef = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -61,7 +78,7 @@ export default function GanttBar({
     [],
   );
 
-  const spec = STATUSES[project.status];
+  const spec = barSpec(project);
   const startFull = dayIndex(project.start_date, rangeStartYear);
   const endFull = dayIndex(project.end_date, rangeStartYear);
   const start = clamp(startFull, 0, totalDays - 1);
@@ -88,29 +105,56 @@ export default function GanttBar({
     );
   };
 
-  const deltaDays = (mode: DragMode, dx: number): number =>
-    dayWidth > 0 ? Math.round(clampDx(mode, dx) / dayWidth) : 0;
+  const deltaDays = (mode: DragMode, dx: number): number => {
+    if (dayWidth === 0) return 0;
+    let delta = Math.round(clampDx(mode, dx) / dayWidth);
+    if (mode === "move") {
+      // magnetism: the start edge snaps to a neighbour's day-after-end
+      const proposed = startFull + delta;
+      for (const s of snapStarts) {
+        if (Math.abs(proposed - s) <= SNAP_RANGE && s >= 0 && s + (endFull - startFull) <= totalDays - 1) {
+          delta = s - startFull;
+          break;
+        }
+      }
+    }
+    return delta;
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (editing || e.button !== 0) return;
+    if (editing || readOnly || e.button !== 0) return;
     const target = e.currentTarget as HTMLElement;
     const mode = (target.dataset.dragMode ?? "move") as DragMode;
     if (mode !== "move") e.stopPropagation();
     e.preventDefault();
     target.setPointerCapture(e.pointerId);
-    downRef.current = { x: e.clientX, mode, moved: false };
-    setDrag({ mode, dx: 0, moved: false, pointer: { x: e.clientX, y: e.clientY } });
-    onSelect();
+    downRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      mode,
+      moved: false,
+      additive: e.shiftKey,
+    };
+    setDrag({
+      mode,
+      dx: 0,
+      dy: 0,
+      moved: false,
+      pointer: { x: e.clientX, y: e.clientY },
+    });
+    onSelect(e.shiftKey);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     const down = downRef.current;
     if (!down) return;
     const dx = e.clientX - down.x;
-    if (Math.abs(dx) > 3) down.moved = true;
+    const dy = e.clientY - down.y;
+    if (Math.hypot(dx, dy) > 3) down.moved = true;
     setDrag({
       mode: down.mode,
       dx,
+      dy,
       moved: down.moved,
       pointer: { x: e.clientX, y: e.clientY },
     });
@@ -121,10 +165,11 @@ export default function GanttBar({
     if (!down) return;
     downRef.current = null;
     const dx = e.clientX - down.x;
+    const dy = e.clientY - down.y;
 
     if (!down.moved) {
       setDrag(null);
-      if (down.mode === "move") {
+      if (down.mode === "move" && !down.additive) {
         // wait out the double-click window before opening the popover,
         // so dblclick-to-rename can land on the bar
         const { clientX, clientY } = e;
@@ -140,11 +185,17 @@ export default function GanttBar({
     const delta = deltaDays(down.mode, dx);
     if (down.mode === "move") {
       snapRef.current = clampDx("move", dx) - delta * dayWidth;
-      onDatesChange(delta, delta);
+      let targetGroup: string | null = null;
+      if (Math.abs(dy) > 26) {
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        targetGroup =
+          under?.closest<HTMLElement>("[data-group]")?.dataset.group ?? null;
+      }
+      onMoveDrop(delta, targetGroup);
     } else if (down.mode === "resize-l") {
-      onDatesChange(delta, 0);
+      onResize(delta, 0);
     } else {
-      onDatesChange(0, delta);
+      onResize(0, delta);
     }
     setDrag(null);
   };
@@ -162,7 +213,7 @@ export default function GanttBar({
         if (barRef.current) barRef.current.style.transform = "";
       },
     });
-  }, [drag, project.start_date, project.end_date]);
+  }, [drag, project.start_date, project.end_date, project.person_id]);
 
   /* Birth: the bar unrolls from its start day with a springy pop */
   useEffect(() => {
@@ -197,7 +248,11 @@ export default function GanttBar({
     const dx = clampDx(drag.mode, drag.dx);
     const delta = deltaDays(drag.mode, drag.dx);
     if (drag.mode === "move") {
-      style = { left: leftPx + dx, width: widthPx };
+      style = {
+        left: leftPx + dx,
+        width: widthPx,
+        top: `calc(50% + ${drag.dy}px)`,
+      };
       liveStart = shiftIso(project.start_date, delta);
       liveEnd = shiftIso(project.end_date, delta);
     } else if (drag.mode === "resize-l") {
@@ -223,7 +278,7 @@ export default function GanttBar({
         data-drag-mode="move"
         aria-label={`${project.name || "Sans titre"}, ${spec.label}, du ${formatDay(project.start_date)} au ${formatDay(project.end_date)}`}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && barRef.current) {
+          if (e.key === "Enter" && barRef.current && !readOnly) {
             const r = barRef.current.getBoundingClientRect();
             onOpenPopover(r.left + r.width / 2, r.bottom);
           }
@@ -233,6 +288,7 @@ export default function GanttBar({
         onPointerUp={onPointerUp}
         onDoubleClick={(e) => {
           e.stopPropagation();
+          if (readOnly) return;
           if (clickTimerRef.current !== null) {
             clearTimeout(clickTimerRef.current);
             clickTimerRef.current = null;
@@ -240,12 +296,18 @@ export default function GanttBar({
           onStartRename();
         }}
         className={`group absolute top-1/2 h-9 -translate-y-1/2 touch-none transition-[scale,box-shadow] duration-200 select-none ${
-          dragging ? "z-10 cursor-grabbing" : "cursor-grab hover:scale-[1.02]"
+          dragging
+            ? "z-20 cursor-grabbing"
+            : readOnly
+              ? "cursor-default"
+              : "cursor-grab hover:scale-[1.02]"
         } rounded-lg ${clippedLeft ? "rounded-l-none" : ""} ${clippedRight ? "rounded-r-none" : ""} ${spec.bar} ${
           selected
-            ? "shadow-[0_0_0_2px_var(--color-ink)]"
-            : "hover:shadow-[0_4px_12px_rgb(0_0_0/0.14)]"
-        } focus-visible:shadow-[0_0_0_2px_var(--color-ink)] focus:outline-hidden`}
+            ? "shadow-[0_0_0_2px_#ffffff,0_0_0_4px_var(--color-ink)]"
+            : readOnly
+              ? ""
+              : "hover:shadow-[0_4px_12px_rgb(0_0_0/0.14)]"
+        } focus-visible:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_var(--color-ink)] focus:outline-hidden`}
         style={style}
       >
         {showAvatar && !editing && (
@@ -261,7 +323,7 @@ export default function GanttBar({
           </p>
         )}
         {/* resize handles — revealed by cursor, hinted by grips on hover */}
-        {!clippedLeft && (
+        {!clippedLeft && !readOnly && (
           <div
             className="bar-handle absolute inset-y-0 left-0 flex w-2 items-center justify-center rounded-l-lg"
             data-drag-mode="resize-l"
@@ -272,7 +334,7 @@ export default function GanttBar({
             <span className="h-3 w-0.5 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-40" />
           </div>
         )}
-        {!clippedRight && (
+        {!clippedRight && !readOnly && (
           <div
             className="bar-handle absolute inset-y-0 right-0 flex w-2 items-center justify-center rounded-r-lg"
             data-drag-mode="resize-r"

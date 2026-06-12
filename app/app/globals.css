@@ -17,6 +17,9 @@
   --color-rausch-deep: #e00b41;
   --color-leaf: #0a8a5f;
   --color-alert: #c13515;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf2dd;
+  --color-mmlime: #e5f77e;
 
   /* Signature three-layer elevation */
   --shadow-float:

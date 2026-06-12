@@ -18,8 +18,16 @@ create table if not exists projects (
     check (status in ('devise','demarre','termine','archive')),
   person_id uuid references people(id) on delete set null,
   moonmoon boolean not null default false,
+  hours_done int not null default 0,
+  hours_total int,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
+);
+
+-- Réglages applicatifs (dont le secret du lien de partage)
+create table if not exists app_settings (
+  key text primary key,
+  value text not null
 );
 
 create or replace function set_updated_at()
@@ -34,17 +42,30 @@ create trigger projects_updated_at
   before update on projects
   for each row execute function set_updated_at();
 
--- Accès réservé aux utilisateurs authentifiés (compte unique d'équipe).
+-- Lecture pour tout utilisateur authentifié ; écriture interdite au compte
+-- de partage lecture seule (partage@superserif.studio).
 alter table people enable row level security;
 alter table projects enable row level security;
+alter table app_settings enable row level security;
 
 drop policy if exists "people open" on people;
 drop policy if exists "projects open" on projects;
 
-create policy "people authenticated" on people
-  for all to authenticated using (true) with check (true);
-create policy "projects authenticated" on projects
-  for all to authenticated using (true) with check (true);
+create policy "settings read" on app_settings for select to authenticated using (true);
+create policy "people read" on people for select to authenticated using (true);
+create policy "projects read" on projects for select to authenticated using (true);
+create policy "people insert" on people for insert to authenticated
+  with check ((auth.jwt() ->> 'email') <> 'partage@superserif.studio');
+create policy "people update" on people for update to authenticated
+  using ((auth.jwt() ->> 'email') <> 'partage@superserif.studio');
+create policy "people delete" on people for delete to authenticated
+  using ((auth.jwt() ->> 'email') <> 'partage@superserif.studio');
+create policy "projects insert" on projects for insert to authenticated
+  with check ((auth.jwt() ->> 'email') <> 'partage@superserif.studio');
+create policy "projects update" on projects for update to authenticated
+  using ((auth.jwt() ->> 'email') <> 'partage@superserif.studio');
+create policy "projects delete" on projects for delete to authenticated
+  using ((auth.jwt() ->> 'email') <> 'partage@superserif.studio');
 
 -- Realtime
 alter publication supabase_realtime add table projects;

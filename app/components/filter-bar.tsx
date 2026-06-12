@@ -31,6 +31,7 @@ export default function FilterBar({
   onFilterMoonmoon,
   search,
   localMode,
+  readOnly,
   searchRef,
   onFilterPerson,
   onFilterStatus,
@@ -46,6 +47,7 @@ export default function FilterBar({
   onFilterMoonmoon: (on: boolean) => void;
   search: string;
   localMode: boolean;
+  readOnly: boolean;
   searchRef: RefObject<HTMLInputElement | null>;
   onFilterPerson: (id: string) => void;
   onFilterStatus: (s: Status | "") => void;
@@ -154,24 +156,26 @@ export default function FilterBar({
 
       <div className="ml-auto flex items-center gap-3">
         {localMode && <p className="text-xs text-mute max-sm:hidden">Mode démo — local</p>}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setPeopleOpen((o) => !o)}
-            className="rounded-lg px-3 py-2 text-base/6 outline -outline-offset-1 outline-hairline hover:bg-cloud focus-visible:outline-2 focus-visible:outline-ink sm:py-1.5 sm:text-sm/6"
-          >
-            Le studio
-          </button>
-          {peopleOpen && (
-            <PeoplePanel
-              people={people}
-              onAdd={onAddPerson}
-              onRemove={onRemovePerson}
-              onCapacityChange={onCapacityChange}
-              onClose={() => setPeopleOpen(false)}
-            />
-          )}
-        </div>
+        {!readOnly && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPeopleOpen((o) => !o)}
+              className="rounded-lg px-3 py-2 text-base/6 outline -outline-offset-1 outline-hairline hover:bg-cloud focus-visible:outline-2 focus-visible:outline-ink sm:py-1.5 sm:text-sm/6"
+            >
+              Le studio
+            </button>
+            {peopleOpen && (
+              <PeoplePanel
+                people={people}
+                onAdd={onAddPerson}
+                onRemove={onRemovePerson}
+                onCapacityChange={onCapacityChange}
+                onClose={() => setPeopleOpen(false)}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
