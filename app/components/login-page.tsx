@@ -4,20 +4,29 @@ import { useEffect, useRef, useState } from "react";
 import { animate } from "animejs";
 import { getSupabase } from "@/lib/supabase-client";
 import { reducedMotion } from "@/lib/motion";
+import ShaderBg from "@/components/shader-bg";
+
+const floatLabel =
+  "pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-base/6 text-mute transition-all duration-200 sm:text-sm/6 " +
+  "peer-focus:top-3 peer-focus:translate-y-0 peer-focus:text-[0.6875rem]/4 peer-focus:font-medium peer-focus:text-ash " +
+  "peer-not-placeholder-shown:top-3 peer-not-placeholder-shown:translate-y-0 peer-not-placeholder-shown:text-[0.6875rem]/4 peer-not-placeholder-shown:font-medium peer-not-placeholder-shown:text-ash";
+
+const floatInput =
+  "peer w-full rounded-lg bg-white px-3.5 pt-6 pb-2 text-base/6 outline -outline-offset-1 outline-hairline placeholder-transparent focus-visible:outline-2 focus-visible:outline-ink sm:text-sm/6";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!formRef.current || reducedMotion()) return;
-    animate(formRef.current, {
-      y: [10, 0],
+    if (!cardRef.current || reducedMotion()) return;
+    animate(cardRef.current, {
+      y: [14, 0],
       opacity: [0, 1],
-      duration: 350,
+      duration: 450,
       ease: "outQuint",
     });
   }, []);
@@ -35,8 +44,8 @@ export default function LoginPage() {
     setPending(false);
     if (authError) {
       setError("Identifiants incorrects.");
-      if (formRef.current && !reducedMotion()) {
-        animate(formRef.current, {
+      if (cardRef.current && !reducedMotion()) {
+        animate(cardRef.current, {
           x: [0, -6, 5, -3, 0],
           duration: 300,
           ease: "outQuad",
@@ -47,75 +56,132 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-white px-6">
-      <form
-        ref={formRef}
-        onSubmit={submit}
-        className="w-full max-w-xs"
-        aria-label="Connexion"
-      >
-        <p className="text-lg font-semibold tracking-tight">
-          Lineup<span className="text-rausch">.</span>
-        </p>
-        <h1 className="mt-8 text-2xl font-semibold tracking-tight text-balance">
-          Connexion
-        </h1>
-        <p className="mt-1.5 text-base/6 text-ash sm:text-sm/6">
-          Le planning du studio.
-        </p>
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#0a0a0a] px-6 py-10">
+      <ShaderBg />
 
-        <div className="mt-8 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg px-3.5 py-2.5 text-base/6 outline -outline-offset-1 outline-hairline placeholder:text-mute focus-visible:outline-2 focus-visible:outline-ink sm:py-2 sm:text-sm/6"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-sm font-medium">
-              Mot de passe
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg px-3.5 py-2.5 text-base/6 outline -outline-offset-1 outline-hairline placeholder:text-mute focus-visible:outline-2 focus-visible:outline-ink sm:py-2 sm:text-sm/6"
-            />
-          </div>
+      <div ref={cardRef} className="relative w-full max-w-sm">
+        {/* eslint-disable-next-line @next/next/no-img-element -- inline brand asset */}
+        <img
+          src="/logo-superserif.svg"
+          alt="Superserif"
+          className="mx-auto mb-8 h-7 w-auto select-none"
+          draggable={false}
+        />
+
+        <div className="rounded-[20px] bg-white p-8 shadow-float sm:p-10">
+          <form onSubmit={submit} aria-label="Connexion">
+            <h1 className="text-2xl font-semibold tracking-tight text-balance">
+              Connexion
+            </h1>
+            <p className="mt-1.5 text-base/6 text-ash sm:text-sm/6">
+              Lineup<span className="text-rausch">.</span> — le planning du
+              studio.
+            </p>
+
+            <div className="mt-8 flex flex-col gap-3">
+              <div className="relative">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  autoFocus
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={floatInput}
+                />
+                <label htmlFor="email" className={floatLabel}>
+                  Email
+                </label>
+              </div>
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="Mot de passe"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={floatInput}
+                />
+                <label htmlFor="password" className={floatLabel}>
+                  Mot de passe
+                </label>
+              </div>
+            </div>
+
+            {error && (
+              <p role="alert" className="mt-4 text-sm text-alert">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              data-button-009=""
+              disabled={pending}
+              className="button-009 mt-6 w-full text-base font-semibold disabled:opacity-60 sm:text-sm [--button-009-color:#ffffff] [--button-009-color-background:var(--color-rausch)] [--button-009-color-focus:var(--color-ink)] [--button-009-padding-top:0.875em] [--button-009-padding-bottom:0.875em]"
+            >
+              <span className="button-009__inner">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="100%"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className="button-009__icon is--left"
+                >
+                  <path
+                    d="M14 19L21 12L14 5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeMiterlimit="10"
+                  ></path>
+                  <path
+                    d="M21 12H2"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeMiterlimit="10"
+                  ></path>
+                </svg>
+                <span className="button-009__text">
+                  {pending ? "Connexion…" : "Se connecter"}
+                </span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="100%"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className="button-009__icon is--right"
+                >
+                  <path
+                    d="M14 19L21 12L14 5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeMiterlimit="10"
+                  ></path>
+                  <path
+                    d="M21 12H2"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeMiterlimit="10"
+                  ></path>
+                </svg>
+              </span>
+              <span className="button-009__bg"></span>
+            </button>
+          </form>
         </div>
 
-        {error && (
-          <p role="alert" className="mt-4 text-sm text-alert">
-            {error}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="mt-6 w-full rounded-lg bg-rausch px-4 py-2.5 text-base/6 font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rausch sm:py-2 sm:text-sm/6"
-        >
-          {pending ? "Connexion…" : "Se connecter"}
-        </button>
-
-        <p className="mt-6 text-xs text-mute">
+        <p className="mt-6 text-center text-xs text-white/45">
           Un seul compte pour l&rsquo;équipe — demande l&rsquo;accès à JJ.
         </p>
-      </form>
+      </div>
     </main>
   );
 }
