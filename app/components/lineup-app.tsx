@@ -8,12 +8,15 @@ import {
   clamp,
   dayIndex,
   daysInRange,
+  formatMonthYear,
   isoFromDay,
+  monthSpansRange,
   shiftIso,
   todayIso,
 } from "@/lib/dates";
+import { isAtCapacity } from "@/lib/capacity";
 import { celebrateAt } from "@/lib/motion";
-import AppHeader from "@/components/app-header";
+import AppHeader, { type MonthOption } from "@/components/app-header";
 import FilterBar from "@/components/filter-bar";
 import Gantt, { type GanttGroup, type GanttHandle } from "@/components/gantt";
 import ProjectPopover from "@/components/project-popover";
@@ -44,6 +47,7 @@ export default function LineupApp() {
   const [bornId, setBornId] = useState<string | null>(null);
   const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
   const [centerLabel, setCenterLabel] = useState("");
+  const [centerDay, setCenterDay] = useState(0);
 
   const ganttRef = useRef<GanttHandle>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -103,6 +107,23 @@ export default function LineupApp() {
     (startDay: number, personId: string | null) => {
       const total = daysInRange(rangeStartYear, YEAR_COUNT);
       const start = clamp(startDay, 0, total - NEW_PROJECT_DAYS);
+      if (personId) {
+        const person = data.people.find((p) => p.id === personId);
+        if (
+          person &&
+          isAtCapacity(
+            data.projects,
+            person,
+            isoFromDay(rangeStartYear, start),
+            isoFromDay(rangeStartYear, start + NEW_PROJECT_DAYS - 1),
+          )
+        ) {
+          setToast({
+            message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
+          });
+          return;
+        }
+      }
       const project: Project = {
         id: crypto.randomUUID(),
         name: "",
@@ -126,7 +147,7 @@ export default function LineupApp() {
       }
       persist(() => store.upsertProject(project));
     },
-    [rangeStartYear, store, upsertLocal, persist],
+    [rangeStartYear, store, upsertLocal, persist, data.people, data.projects],
   );
 
   /** New project centered on the current view, one month long. */
@@ -184,9 +205,21 @@ export default function LineupApp() {
     (id: string, personId: string | null) => {
       const project = data.projects.find((p) => p.id === id);
       if (!project) return;
+      if (personId) {
+        const person = data.people.find((p) => p.id === personId);
+        if (
+          person &&
+          isAtCapacity(data.projects, person, project.start_date, project.end_date, id)
+        ) {
+          setToast({
+            message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
+          });
+          return;
+        }
+      }
       updateProject({ ...project, person_id: personId });
     },
-    [data.projects, updateProject],
+    [data.projects, data.people, updateProject],
   );
 
   const removeProject = useCallback(
@@ -211,12 +244,31 @@ export default function LineupApp() {
 
   const addPerson = useCallback(
     (name: string) => {
-      const person: Person = { id: crypto.randomUUID(), name: name.trim(), avatar: null };
+      const person: Person = {
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        avatar: null,
+        capacity: 3,
+      };
       if (!person.name) return;
       setData((d) => ({ ...d, people: [...d.people, person] }));
       persist(() => store.addPerson(person));
     },
     [store, persist],
+  );
+
+  const changeCapacity = useCallback(
+    (id: string, capacity: number) => {
+      const person = data.people.find((p) => p.id === id);
+      if (!person || person.capacity === capacity) return;
+      const next = { ...person, capacity };
+      setData((d) => ({
+        ...d,
+        people: d.people.map((p) => (p.id === id ? next : p)),
+      }));
+      persist(() => store.updatePerson(next));
+    },
+    [data.people, store, persist],
   );
 
   const removePerson = useCallback(
@@ -311,6 +363,24 @@ export default function LineupApp() {
 
   const filtersActive = Boolean(filterPerson || filterStatus || search.trim());
 
+  const months = useMemo<MonthOption[]>(
+    () =>
+      monthSpansRange(rangeStartYear, YEAR_COUNT).map((m) => ({
+        label: formatMonthYear(rangeStartYear, m.startDay),
+        index: m.monthIndex,
+        day: m.startDay + Math.floor(m.days / 2),
+      })),
+    [rangeStartYear],
+  );
+
+  const currentMonthIndex = useMemo(() => {
+    const spans = monthSpansRange(rangeStartYear, YEAR_COUNT);
+    const span = spans.find(
+      (m) => centerDay >= m.startDay && centerDay < m.startDay + m.days,
+    );
+    return span?.monthIndex ?? 12;
+  }, [rangeStartYear, centerDay]);
+
   const popoverProject = popover
     ? (data.projects.find((p) => p.id === popover.projectId) ?? null)
     : null;
@@ -319,6 +389,9 @@ export default function LineupApp() {
     <main className="flex h-dvh flex-col overflow-hidden">
       <AppHeader
         centerLabel={centerLabel}
+        months={months}
+        currentMonthIndex={currentMonthIndex}
+        onPickMonth={(day) => ganttRef.current?.scrollToDay(day)}
         onPrevMonth={() => ganttRef.current?.scrollByMonths(-1)}
         onNextMonth={() => ganttRef.current?.scrollByMonths(1)}
         onToday={() => ganttRef.current?.scrollToToday()}
@@ -341,6 +414,7 @@ export default function LineupApp() {
         onSearch={setSearch}
         onAddPerson={addPerson}
         onRemovePerson={removePerson}
+        onCapacityChange={changeCapacity}
       />
       <Gantt
         ref={ganttRef}
@@ -383,12 +457,27 @@ export default function LineupApp() {
           setPopover(null);
         }}
         onCommitName={commitName}
-        onCenterChange={setCenterLabel}
+        onCenterChange={(label, day) => {
+          setCenterLabel(label);
+          setCenterDay(day);
+        }}
       />
       {popoverProject && popover && (
         <ProjectPopover
           project={popoverProject}
           people={data.people}
+          isPersonFull={(personId) => {
+            const person = data.people.find((p) => p.id === personId);
+            return person
+              ? isAtCapacity(
+                  data.projects,
+                  person,
+                  popoverProject.start_date,
+                  popoverProject.end_date,
+                  popoverProject.id,
+                )
+              : false;
+          }}
           x={popover.x}
           y={popover.y}
           onClose={() => setPopover(null)}

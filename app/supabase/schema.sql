@@ -5,6 +5,7 @@ create table if not exists people (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   avatar text,
+  capacity int not null default 3,
   created_at timestamptz default now()
 );
 
@@ -14,7 +15,7 @@ create table if not exists projects (
   start_date date not null,
   end_date date not null,
   status text not null default 'devise'
-    check (status in ('devise','a_demarrer','demarre','termine','archive')),
+    check (status in ('devise','demarre','termine','archive')),
   person_id uuid references people(id) on delete set null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -49,11 +50,11 @@ alter publication supabase_realtime add table projects;
 alter publication supabase_realtime add table people;
 
 -- L'équipe (uniquement si la table est vide)
-insert into people (name, avatar)
-select v.name, v.avatar
+insert into people (name, avatar, capacity)
+select v.name, v.avatar, v.capacity
 from (values
-  ('JJ', '/portrait-jj.png'),
-  ('Sylvain', '/portrait-sylvain.png'),
-  ('Kiks', '/portrait-killian.png')
-) as v(name, avatar)
+  ('JJ', '/portrait-jj.png', 4),
+  ('Sylvain', '/portrait-sylvain.png', 3),
+  ('Kiks', '/portrait-killian.png', 4)
+) as v(name, avatar, capacity)
 where not exists (select 1 from people);

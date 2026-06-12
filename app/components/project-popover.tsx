@@ -13,6 +13,7 @@ const WIDTH = 248;
 export default function ProjectPopover({
   project,
   people,
+  isPersonFull,
   x,
   y,
   onClose,
@@ -23,6 +24,7 @@ export default function ProjectPopover({
 }: {
   project: Project;
   people: Person[];
+  isPersonFull: (personId: string) => boolean;
   x: number;
   y: number;
   onClose: () => void;
@@ -103,19 +105,37 @@ export default function ProjectPopover({
             <div className="flex flex-wrap gap-1.5">
               {people.map((p) => {
                 const active = project.person_id === p.id;
+                const full = !active && isPersonFull(p.id);
                 return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    title={p.name}
-                    aria-pressed={active}
-                    onClick={() => onAssign(active ? null : p.id)}
-                    className={`shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
-                      active ? "outline-2 outline-offset-2 outline-ink" : "opacity-70 hover:opacity-100"
-                    }`}
-                  >
-                    <Avatar person={p} className="size-7" />
-                  </button>
+                  <span key={p.id} className="group/assign relative">
+                    <button
+                      type="button"
+                      title={full ? undefined : p.name}
+                      aria-pressed={active}
+                      aria-disabled={full}
+                      onClick={() => {
+                        if (full) return;
+                        onAssign(active ? null : p.id);
+                      }}
+                      className={`shrink-0 rounded-full transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
+                        active
+                          ? "outline-2 outline-offset-2 outline-ink"
+                          : full
+                            ? "cursor-not-allowed opacity-35 grayscale"
+                            : "opacity-70 active:scale-90 hover:opacity-100"
+                      }`}
+                    >
+                      <Avatar person={p} className="size-7" />
+                    </button>
+                    {full && (
+                      <span
+                        role="tooltip"
+                        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 rounded-md bg-ink px-2 py-1 text-xs whitespace-nowrap text-white group-hover/assign:block"
+                      >
+                        {p.name} — max atteint sur cette période
+                      </span>
+                    )}
+                  </span>
                 );
               })}
             </div>

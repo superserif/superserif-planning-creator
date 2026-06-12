@@ -1,14 +1,11 @@
-export type Status =
-  | "devise"
-  | "a_demarrer"
-  | "demarre"
-  | "termine"
-  | "archive";
+export type Status = "devise" | "demarre" | "termine" | "archive";
 
 export interface Person {
   id: string;
   name: string;
   avatar?: string | null;
+  /** Max simultaneous active projects over a period */
+  capacity: number;
 }
 
 export interface Project {
@@ -45,13 +42,6 @@ export const STATUSES: Record<Status, StatusSpec> = {
     mini: "bg-white outline -outline-offset-1 outline-stone",
     outsideText: "text-ash",
   },
-  a_demarrer: {
-    label: "À démarrer",
-    bar: "bg-sky/12 text-sky-deep outline -outline-offset-1 outline-sky/25",
-    dot: "bg-sky/20 outline -outline-offset-1 outline-sky/50",
-    mini: "bg-sky/50",
-    outsideText: "text-ash",
-  },
   demarre: {
     label: "Démarré",
     bar: "bg-rausch text-white",
@@ -75,10 +65,4 @@ export const STATUSES: Record<Status, StatusSpec> = {
   },
 };
 
-export const STATUS_ORDER: Status[] = [
-  "devise",
-  "a_demarrer",
-  "demarre",
-  "termine",
-  "archive",
-];
+export const STATUS_ORDER: Status[] = ["devise", "demarre", "termine", "archive"];

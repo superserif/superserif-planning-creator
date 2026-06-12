@@ -34,6 +34,7 @@ export default function FilterBar({
   onSearch,
   onAddPerson,
   onRemovePerson,
+  onCapacityChange,
 }: {
   people: Person[];
   filterPerson: string;
@@ -46,6 +47,7 @@ export default function FilterBar({
   onSearch: (q: string) => void;
   onAddPerson: (name: string) => void;
   onRemovePerson: (id: string) => void;
+  onCapacityChange: (id: string, capacity: number) => void;
 }) {
   const [peopleOpen, setPeopleOpen] = useState(false);
   const hasFilter = Boolean(filterPerson || filterStatus || search.trim());
@@ -137,13 +139,14 @@ export default function FilterBar({
             onClick={() => setPeopleOpen((o) => !o)}
             className="rounded-lg px-3 py-2 text-base/6 outline -outline-offset-1 outline-hairline hover:bg-cloud focus-visible:outline-2 focus-visible:outline-ink sm:py-1.5 sm:text-sm/6"
           >
-            Personnes
+            Le studio
           </button>
           {peopleOpen && (
             <PeoplePanel
               people={people}
               onAdd={onAddPerson}
               onRemove={onRemovePerson}
+              onCapacityChange={onCapacityChange}
               onClose={() => setPeopleOpen(false)}
             />
           )}
@@ -157,11 +160,13 @@ function PeoplePanel({
   people,
   onAdd,
   onRemove,
+  onCapacityChange,
   onClose,
 }: {
   people: Person[];
   onAdd: (name: string) => void;
   onRemove: (id: string) => void;
+  onCapacityChange: (id: string, capacity: number) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
@@ -187,24 +192,53 @@ function PeoplePanel({
   return (
     <div
       ref={panelRef}
-      className="absolute top-full right-0 z-30 mt-2 w-64 rounded-xl bg-white p-2 shadow-float"
+      className="absolute top-full right-0 z-50 mt-2 w-72 rounded-xl bg-white p-2 shadow-float"
     >
-      <p className="px-2 pt-1 pb-2 text-xs font-semibold text-ash">Personnes</p>
+      <div className="flex items-baseline justify-between px-2 pt-1 pb-2">
+        <p className="text-xs font-semibold text-ash">Le studio</p>
+        <p className="text-[0.6875rem] text-mute">Projets max / période</p>
+      </div>
       <ul role="list">
         {people.map((p) => (
           <li key={p.id} className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5">
             <Avatar person={p} className="size-6" />
             <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+            <span className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                aria-label={`Réduire la capacité de ${p.name}`}
+                onClick={() => onCapacityChange(p.id, Math.max(1, p.capacity - 1))}
+                className="flex size-5 items-center justify-center rounded-full text-ash hover:bg-cloud hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
+              >
+                <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                  <path d="M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+              <span className="w-4 text-center text-sm font-semibold tabular-nums">
+                {p.capacity}
+              </span>
+              <button
+                type="button"
+                aria-label={`Augmenter la capacité de ${p.name}`}
+                onClick={() => onCapacityChange(p.id, Math.min(8, p.capacity + 1))}
+                className="flex size-5 items-center justify-center rounded-full text-ash hover:bg-cloud hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
+              >
+                <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                  <path
+                    d="M8 3.5v9M3.5 8h9"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </span>
             <button
               type="button"
               aria-label={`Supprimer ${p.name}`}
               onClick={() => onRemove(p.id)}
               className="relative flex size-6 shrink-0 items-center justify-center rounded-full text-mute opacity-0 group-hover:opacity-100 hover:bg-cloud hover:text-alert focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
             >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-              />
               <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
                 <path
                   d="m4.5 4.5 7 7m0-7-7 7"

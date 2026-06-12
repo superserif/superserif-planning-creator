@@ -1,7 +1,19 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
+export interface MonthOption {
+  label: string;
+  index: number;
+  /** day at the middle of the month, in range-day coordinates */
+  day: number;
+}
+
 export default function AppHeader({
   centerLabel,
+  months,
+  currentMonthIndex,
+  onPickMonth,
   onPrevMonth,
   onNextMonth,
   onToday,
@@ -9,12 +21,17 @@ export default function AppHeader({
   onLogout,
 }: {
   centerLabel: string;
+  months: MonthOption[];
+  currentMonthIndex: number;
+  onPickMonth: (day: number) => void;
   onPrevMonth: () => void;
   onNextMonth: () => void;
   onToday: () => void;
   onAddProject: () => void;
   onLogout?: () => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   return (
     <header className="flex shrink-0 items-center justify-between gap-4 border-b border-black/8 px-4 py-3 sm:px-6">
       <div className="flex flex-1 items-center">
@@ -44,9 +61,28 @@ export default function AppHeader({
             />
           </svg>
         </button>
-        <p className="w-32 text-center text-sm font-semibold tracking-tight whitespace-nowrap tabular-nums">
-          {centerLabel}
-        </p>
+        <div className="relative">
+          <button
+            type="button"
+            aria-expanded={pickerOpen}
+            aria-label="Choisir le mois"
+            onClick={() => setPickerOpen((o) => !o)}
+            className="w-32 rounded-lg py-1 text-center text-sm font-semibold tracking-tight whitespace-nowrap tabular-nums hover:bg-cloud focus-visible:outline-2 focus-visible:outline-ink"
+          >
+            {centerLabel}
+          </button>
+          {pickerOpen && (
+            <MonthPicker
+              months={months}
+              currentMonthIndex={currentMonthIndex}
+              onPick={(day) => {
+                onPickMonth(day);
+                setPickerOpen(false);
+              }}
+              onClose={() => setPickerOpen(false)}
+            />
+          )}
+        </div>
         <button
           type="button"
           onClick={onNextMonth}
@@ -119,5 +155,60 @@ export default function AppHeader({
         </button>
       </div>
     </header>
+  );
+}
+
+function MonthPicker({
+  months,
+  currentMonthIndex,
+  onPick,
+  onClose,
+}: {
+  months: MonthOption[];
+  currentMonthIndex: number;
+  onPick: (day: number) => void;
+  onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const currentRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: "center" });
+    const onDown = (e: PointerEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={panelRef}
+      className="absolute top-full left-1/2 z-50 mt-2 max-h-80 w-44 -translate-x-1/2 overflow-y-auto rounded-xl bg-white p-1.5 shadow-float"
+    >
+      {months.map((m) => {
+        const current = m.index === currentMonthIndex;
+        return (
+          <button
+            key={m.index}
+            ref={current ? currentRef : undefined}
+            type="button"
+            onClick={() => onPick(m.day)}
+            className={`flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-sm tabular-nums hover:bg-cloud focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink ${
+              current ? "bg-cloud font-semibold" : ""
+            }`}
+          >
+            {m.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

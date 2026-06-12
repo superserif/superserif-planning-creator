@@ -14,6 +14,7 @@ export interface Store {
   upsertProject(p: Project): Promise<void>;
   deleteProject(id: string): Promise<void>;
   addPerson(p: Person): Promise<void>;
+  updatePerson(p: Person): Promise<void>;
   deletePerson(id: string): Promise<void>;
   /** Called when data changed remotely (another tab or another client). */
   subscribe(onChange: () => void): () => void;
@@ -24,9 +25,9 @@ const LS_KEY = "lineup-data-v2";
 function seed(): StoreData {
   const t = todayIso();
   const people: Person[] = [
-    { id: crypto.randomUUID(), name: "JJ", avatar: "/portrait-jj.png" },
-    { id: crypto.randomUUID(), name: "Sylvain", avatar: "/portrait-sylvain.png" },
-    { id: crypto.randomUUID(), name: "Kiks", avatar: "/portrait-killian.png" },
+    { id: crypto.randomUUID(), name: "JJ", avatar: "/portrait-jj.png", capacity: 4 },
+    { id: crypto.randomUUID(), name: "Sylvain", avatar: "/portrait-sylvain.png", capacity: 3 },
+    { id: crypto.randomUUID(), name: "Kiks", avatar: "/portrait-killian.png", capacity: 4 },
   ];
   const [jj, sylvain, kiks] = people;
   const projects: Project[] = [
@@ -59,7 +60,7 @@ function seed(): StoreData {
       name: "Guidelines — Studio K",
       start_date: shiftIso(t, 20),
       end_date: shiftIso(t, 55),
-      status: "a_demarrer",
+      status: "devise",
       person_id: jj.id,
     },
     {
@@ -86,7 +87,15 @@ function createLocalStore(): Store {
   const read = (): StoreData => {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw) return JSON.parse(raw) as StoreData;
+      if (raw) {
+        const data = JSON.parse(raw) as StoreData;
+        // normalize data written by older versions
+        data.people = data.people.map((p) => ({ ...p, capacity: p.capacity ?? 3 }));
+        data.projects = data.projects.map((p) =>
+          (p.status as string) === "a_demarrer" ? { ...p, status: "devise" } : p,
+        );
+        return data;
+      }
     } catch {
       // corrupted storage falls through to reseed
     }
@@ -120,6 +129,11 @@ function createLocalStore(): Store {
       data.people.push(p);
       write(data);
     },
+    async updatePerson(p) {
+      const data = read();
+      data.people = data.people.map((x) => (x.id === p.id ? p : x));
+      write(data);
+    },
     async deletePerson(id) {
       const data = read();
       data.people = data.people.filter((x) => x.id !== id);
@@ -144,7 +158,7 @@ function createSupabaseStore(client: SupabaseClient): Store {
     async load() {
       const [projects, people] = await Promise.all([
         client.from("projects").select("id,name,start_date,end_date,status,person_id"),
-        client.from("people").select("id,name,avatar"),
+        client.from("people").select("id,name,avatar,capacity").order("name"),
       ]);
       if (projects.error) throw projects.error;
       if (people.error) throw people.error;
@@ -163,6 +177,10 @@ function createSupabaseStore(client: SupabaseClient): Store {
     },
     async addPerson(p) {
       const { error } = await client.from("people").insert(p);
+      if (error) throw error;
+    },
+    async updatePerson(p) {
+      const { error } = await client.from("people").upsert(p);
       if (error) throw error;
     },
     async deletePerson(id) {

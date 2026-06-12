@@ -164,18 +164,24 @@ export default function GanttBar({
     });
   }, [drag, project.start_date, project.end_date]);
 
-  /* Birth: a new bar grows from its start day */
+  /* Birth: the bar unrolls from its start day with a springy pop */
   useEffect(() => {
     if (!born || !barRef.current) return;
     onBornConsumed();
     if (reducedMotion()) return;
-    barRef.current.style.transformOrigin = "left center";
-    animate(barRef.current, {
+    const el = barRef.current;
+    el.style.transformOrigin = "left center";
+    animate(el, {
       scaleX: [0, 1],
-      duration: 250,
-      ease: "outQuint",
+      ease: spring({ stiffness: 180, damping: 15 }),
+    });
+    animate(el, {
+      scaleY: [0.4, 1],
+      delay: 70,
+      duration: 420,
+      ease: "outBack(2.4)",
       onComplete: () => {
-        if (barRef.current) barRef.current.style.transform = "";
+        el.style.transform = "";
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,6 +340,15 @@ function NameInput({
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
+    if (inputRef.current && !reducedMotion()) {
+      animate(inputRef.current, {
+        y: [8, 0],
+        scale: [0.96, 1],
+        opacity: [0, 1],
+        duration: 280,
+        ease: "outQuint",
+      });
+    }
   }, []);
 
   return (
@@ -353,7 +368,7 @@ function NameInput({
         }
       }}
       onBlur={(e) => onCommit(e.target.value, false)}
-      className="absolute top-1/2 z-20 w-52 -translate-y-1/2 rounded-lg bg-white px-2.5 py-1.5 text-sm shadow-float outline-2 -outline-offset-1 outline-ink placeholder:text-mute"
+      className="absolute top-1/2 z-20 w-52 rounded-lg bg-white px-3 py-2 text-sm caret-rausch shadow-float outline -outline-offset-1 outline-black/10 placeholder:text-mute [translate:0_-50%]"
       style={{ left: leftPx }}
     />
   );

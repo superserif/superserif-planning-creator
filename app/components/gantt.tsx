@@ -17,9 +17,11 @@ import {
   dayIndex,
   daysInRange,
   formatMonthYear,
+  isoFromDay,
   monthSpansRange,
   todayIso,
 } from "@/lib/dates";
+import { isAtCapacity, personLoad, studioLoadPct } from "@/lib/capacity";
 import { reducedMotion } from "@/lib/motion";
 import Avatar from "@/components/avatar";
 import GanttBar from "@/components/gantt-bar";
@@ -35,6 +37,7 @@ export interface GanttGroup {
 
 export interface GanttHandle {
   scrollToToday(): void;
+  scrollToDay(day: number): void;
   scrollByMonths(n: number): void;
   getCenterDay(): number;
 }
@@ -60,7 +63,7 @@ const Gantt = forwardRef<
     onDatesChange: (id: string, deltaStart: number, deltaEnd: number) => void;
     onStartRename: (id: string) => void;
     onCommitName: (id: string, name: string) => void;
-    onCenterChange: (label: string) => void;
+    onCenterChange: (label: string, day: number) => void;
   }
 >(function Gantt(
   {
@@ -106,6 +109,7 @@ const Gantt = forwardRef<
   } | null>(null);
   const [dims, setDims] = useState({ dayWidth: 0, leftCol: 256 });
   const [panning, setPanning] = useState(false);
+  const [viewWin, setViewWin] = useState<{ a: number; b: number } | null>(null);
 
   const { dayWidth, leftCol } = dims;
   const totalWidth = totalDays * dayWidth;
@@ -144,6 +148,7 @@ const Gantt = forwardRef<
     ref,
     () => ({
       scrollToToday: () => scrollToDay(todayIdx, true),
+      scrollToDay: (day: number) => scrollToDay(day, true),
       scrollByMonths: (n: number) =>
         scrollerRef.current?.scrollBy({ left: n * MONTH_DAYS * dayWidth, behavior: "smooth" }),
       getCenterDay: () => centerDayRef.current,
@@ -158,19 +163,36 @@ const Gantt = forwardRef<
     if (!initialScrollRef.current) {
       initialScrollRef.current = true;
       centerDayRef.current = todayIdx;
-      onCenterChange(formatMonthYear(rangeStartYear, todayIdx));
+      onCenterChange(formatMonthYear(rangeStartYear, todayIdx), todayIdx);
     }
     scrollToDay(centerDayRef.current, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayWidth, leftCol]);
+
+  const computeViewWin = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || dayWidth === 0) return;
+    const a = clamp(Math.floor(el.scrollLeft / dayWidth), 0, totalDays - 1);
+    const b = clamp(
+      Math.ceil((el.scrollLeft + el.clientWidth - leftCol) / dayWidth),
+      0,
+      totalDays - 1,
+    );
+    setViewWin((prev) => (prev && prev.a === a && prev.b === b ? prev : { a, b }));
+  }, [dayWidth, leftCol, totalDays]);
+
+  useEffect(() => {
+    computeViewWin();
+  }, [computeViewWin]);
 
   const handleScroll = () => {
     requestAnimationFrame(() => {
       const day = centerDay();
       if (day !== centerDayRef.current) {
         centerDayRef.current = day;
-        onCenterChange(formatMonthYear(rangeStartYear, day));
+        onCenterChange(formatMonthYear(rangeStartYear, day), day);
       }
+      computeViewWin();
     });
   };
 
@@ -269,17 +291,31 @@ const Gantt = forwardRef<
     if (editingId) return;
     const el = scrollerRef.current;
     if (!el) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-no-pan]")) return;
+    // resolve by coordinates: the pan's pointer capture retargets events
+    // to the scroller, so e.target can't be trusted here
+    const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    if (!under || under.closest("[data-no-pan]")) return;
     const rect = el.getBoundingClientRect();
     const contentX = el.scrollLeft + (e.clientX - rect.left);
     if (contentX < leftCol) return;
     const day = clamp(Math.floor((contentX - leftCol) / dayWidth), 0, totalDays - 1);
-    const groupKey = target.closest<HTMLElement>("[data-group]")?.dataset.group;
+    const groupKey = under.closest<HTMLElement>("[data-group]")?.dataset.group;
     onCreate(day, groupKey && groupKey !== "none" ? groupKey : null);
   };
 
   const visibleCount = flatProjects.filter((p) => visibleIds.has(p.id)).length;
+
+  /* Capacity over the visible window, and over the window where a new project would land */
+  const winStartIso = viewWin ? isoFromDay(rangeStartYear, viewWin.a) : null;
+  const winEndIso = viewWin ? isoFromDay(rangeStartYear, viewWin.b) : null;
+  const createStart = clamp(centerDayRef.current - 15, 0, totalDays - 30);
+  const createStartIso = isoFromDay(rangeStartYear, createStart);
+  const createEndIso = isoFromDay(rangeStartYear, createStart + 29);
+  const people = groups.map((g) => g.person).filter((p): p is Person => p !== null);
+  const studioPct =
+    winStartIso && winEndIso
+      ? studioLoadPct(flatProjects, people, winStartIso, winEndIso)
+      : 0;
 
   return (
     <div
@@ -300,10 +336,15 @@ const Gantt = forwardRef<
         <div className="sticky top-0 z-30 flex h-9 shrink-0 border-b border-black/8 bg-white">
           <p
             data-no-pan
-            className="sticky left-0 z-10 flex shrink-0 items-center bg-white px-4 text-xs text-mute tabular-nums sm:px-6"
+            title="Charge du studio sur la période visible"
+            className="sticky left-0 z-10 flex shrink-0 items-center gap-1.5 bg-white px-4 text-xs text-mute tabular-nums sm:px-6"
             style={{ width: leftCol }}
           >
             {visibleCount} projet{visibleCount > 1 ? "s" : ""}
+            <span aria-hidden="true">·</span>
+            <span className={studioPct >= 100 ? "font-semibold text-alert" : ""}>
+              {studioPct} %
+            </span>
           </p>
           <div className="relative" style={{ width: totalWidth }}>
             {months.map((m) => (
@@ -363,6 +404,13 @@ const Gantt = forwardRef<
           const open = !closedGroups.has(group.key);
           const groupVisible = group.projects.filter((p) => visibleIds.has(p.id));
           const groupShown = !filtersActive || groupVisible.length > 0;
+          const load =
+            group.person && winStartIso && winEndIso
+              ? personLoad(flatProjects, group.person.id, winStartIso, winEndIso)
+              : 0;
+          const full =
+            group.person !== null &&
+            isAtCapacity(flatProjects, group.person, createStartIso, createEndIso);
           return (
             <div
               key={group.key}
@@ -378,7 +426,7 @@ const Gantt = forwardRef<
               >
                 <div
                   data-no-pan
-                  className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-2 sm:pl-3.5"
+                  className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-2 sm:pl-3.5"
                   style={{ width: leftCol }}
                 >
                   <button
@@ -412,33 +460,67 @@ const Gantt = forwardRef<
                   >
                     {group.person?.name ?? "Non assigné"}
                   </p>
-                  <p className="text-xs text-mute tabular-nums">{group.projects.length}</p>
-                  <span className="flex-1" />
-                  <button
-                    type="button"
-                    aria-label={`Nouveau projet — ${group.person?.name ?? "non assigné"}`}
-                    title="Nouveau projet"
-                    onClick={() =>
-                      onCreate(
-                        Math.max(0, centerDayRef.current - 15),
-                        group.person?.id ?? null,
-                      )
-                    }
-                    className="relative flex size-6 shrink-0 items-center justify-center rounded-full text-ash transition-transform outline -outline-offset-1 outline-hairline hover:bg-cloud hover:text-ink active:scale-90 focus-visible:outline-2 focus-visible:outline-ink"
-                  >
+                  {group.person ? (
                     <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                    />
-                    <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
-                      <path
-                        d="M8 3.5v9M3.5 8h9"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
+                      title={`${load} projet${load > 1 ? "s" : ""} sur la période visible (max ${group.person.capacity})`}
+                      className="flex shrink-0 items-center gap-1.5"
+                    >
+                      <span className="h-1 w-8 overflow-hidden rounded-full bg-black/10">
+                        <span
+                          className="block h-full rounded-full bg-leaf transition-[width] duration-300"
+                          style={{
+                            width: `${Math.min(100, (load / group.person.capacity) * 100)}%`,
+                          }}
+                        />
+                      </span>
+                      <span className="text-xs text-mute tabular-nums">
+                        {load}/{group.person.capacity}
+                      </span>
+                    </span>
+                  ) : (
+                    <p className="text-xs text-mute tabular-nums">
+                      {group.projects.length}
+                    </p>
+                  )}
+                  <span className="flex-1" />
+                  <span className="group/plus relative shrink-0">
+                    <button
+                      type="button"
+                      aria-label={`Nouveau projet — ${group.person?.name ?? "non assigné"}`}
+                      aria-disabled={full}
+                      title={full ? undefined : "Nouveau projet"}
+                      onClick={() => {
+                        if (full) return;
+                        onCreate(createStart, group.person?.id ?? null);
+                      }}
+                      className={`relative flex size-6 items-center justify-center rounded-full transition-transform outline -outline-offset-1 focus-visible:outline-2 focus-visible:outline-ink ${
+                        full
+                          ? "cursor-not-allowed text-stone outline-black/5"
+                          : "text-ash outline-hairline hover:bg-cloud hover:text-ink active:scale-90"
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
                       />
-                    </svg>
-                  </button>
+                      <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                        <path
+                          d="M8 3.5v9M3.5 8h9"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                    {full && (
+                      <span
+                        role="tooltip"
+                        className="pointer-events-none absolute top-1/2 right-full z-30 mr-1.5 hidden -translate-y-1/2 rounded-md bg-ink px-2 py-1 text-xs whitespace-nowrap text-white group-hover/plus:block"
+                      >
+                        Nombre de projets max atteint
+                      </span>
+                    )}
+                  </span>
                 </div>
                 {/* Collapsed minis */}
                 <div className="relative border-b border-black/4" style={{ width: totalWidth }}>
