@@ -16,7 +16,7 @@ export function personLoad(
 ): number {
   return projects.filter(
     (p) =>
-      p.person_id === personId &&
+      p.assignees.includes(personId) &&
       p.id !== excludeId &&
       ACTIVE.has(p.status) &&
       p.start_date <= endIso &&

@@ -19,10 +19,11 @@ interface DragState {
 }
 
 const SNAP_RANGE = 2; // days of magnetism toward a neighbour's edge
+const MAX_FACES = 3;
 
 export default function GanttBar({
   project,
-  person,
+  persons,
   rangeStartYear,
   totalDays,
   dayWidth,
@@ -40,11 +41,11 @@ export default function GanttBar({
   onCommitName,
 }: {
   project: Project;
-  person: Person | null;
+  /** every assignee — the faces on the block */
+  persons: Person[];
   rangeStartYear: number;
   totalDays: number;
   dayWidth: number;
-  /** day indexes the bar's start magnetises to (neighbours' end + 1) */
   snapStarts: number[];
   selected: boolean;
   editing: boolean;
@@ -53,7 +54,6 @@ export default function GanttBar({
   onBornConsumed: () => void;
   onSelect: (additive: boolean) => void;
   onOpenPopover: (x: number, y: number) => void;
-  /** end of a body drag: day delta + the group key under the pointer (vertical reassign) */
   onMoveDrop: (deltaDays: number, targetGroupKey: string | null) => void;
   onResize: (deltaStart: number, deltaEnd: number) => void;
   onStartRename: () => void;
@@ -109,10 +109,13 @@ export default function GanttBar({
     if (dayWidth === 0) return 0;
     let delta = Math.round(clampDx(mode, dx) / dayWidth);
     if (mode === "move") {
-      // magnetism: the start edge snaps to a neighbour's day-after-end
       const proposed = startFull + delta;
       for (const s of snapStarts) {
-        if (Math.abs(proposed - s) <= SNAP_RANGE && s >= 0 && s + (endFull - startFull) <= totalDays - 1) {
+        if (
+          Math.abs(proposed - s) <= SNAP_RANGE &&
+          s >= 0 &&
+          s + (endFull - startFull) <= totalDays - 1
+        ) {
           delta = s - startFull;
           break;
         }
@@ -170,8 +173,6 @@ export default function GanttBar({
     if (!down.moved) {
       setDrag(null);
       if (down.mode === "move" && !down.additive) {
-        // wait out the double-click window before opening the popover,
-        // so dblclick-to-rename can land on the bar
         const { clientX, clientY } = e;
         if (clickTimerRef.current !== null) clearTimeout(clickTimerRef.current);
         clickTimerRef.current = window.setTimeout(() => {
@@ -186,7 +187,7 @@ export default function GanttBar({
     if (down.mode === "move") {
       snapRef.current = clampDx("move", dx) - delta * dayWidth;
       let targetGroup: string | null = null;
-      if (Math.abs(dy) > 26) {
+      if (Math.abs(dy) > 22) {
         const under = document.elementFromPoint(e.clientX, e.clientY);
         targetGroup =
           under?.closest<HTMLElement>("[data-group]")?.dataset.group ?? null;
@@ -200,7 +201,7 @@ export default function GanttBar({
     setDrag(null);
   };
 
-  /* Snap settle: the residual pixels ease out with a touch of spring */
+  /* Snap settle */
   useEffect(() => {
     if (drag || snapRef.current === 0 || !barRef.current) return;
     const residual = snapRef.current;
@@ -213,19 +214,16 @@ export default function GanttBar({
         if (barRef.current) barRef.current.style.transform = "";
       },
     });
-  }, [drag, project.start_date, project.end_date, project.person_id]);
+  }, [drag, project.start_date, project.end_date, project.assignees]);
 
-  /* Birth: the bar unrolls from its start day with a springy pop */
+  /* Birth */
   useEffect(() => {
     if (!born || !barRef.current) return;
     onBornConsumed();
     if (reducedMotion()) return;
     const el = barRef.current;
     el.style.transformOrigin = "left center";
-    animate(el, {
-      scaleX: [0, 1],
-      ease: spring({ stiffness: 180, damping: 15 }),
-    });
+    animate(el, { scaleX: [0, 1], ease: spring({ stiffness: 180, damping: 15 }) });
     animate(el, {
       scaleY: [0.4, 1],
       delay: 70,
@@ -248,11 +246,7 @@ export default function GanttBar({
     const dx = clampDx(drag.mode, drag.dx);
     const delta = deltaDays(drag.mode, drag.dx);
     if (drag.mode === "move") {
-      style = {
-        left: leftPx + dx,
-        width: widthPx,
-        top: `calc(50% + ${drag.dy}px)`,
-      };
+      style = { left: leftPx + dx, width: widthPx, top: `calc(50% + ${drag.dy}px)` };
       liveStart = shiftIso(project.start_date, delta);
       liveEnd = shiftIso(project.end_date, delta);
     } else if (drag.mode === "resize-l") {
@@ -264,8 +258,16 @@ export default function GanttBar({
     }
   }
 
-  const showAvatar = person !== null && widthPx >= 64 && !clippedLeft;
-  const nameInside = widthPx === 0 || widthPx >= (showAvatar ? 120 : 88);
+  const faces = persons.slice(0, MAX_FACES);
+  const extra = persons.length - faces.length;
+  const facesWidth =
+    faces.length > 0 ? 4 + 20 + (faces.length - 1) * 13 + (extra > 0 ? 16 : 0) : 0;
+  const showFaces = faces.length > 0 && widthPx >= facesWidth + 36 && !clippedLeft;
+  const hoursLabel =
+    project.hours_total && project.hours_total > 0
+      ? `${project.hours_done ?? 0}/${project.hours_total}h · ${Math.round(((project.hours_done ?? 0) / project.hours_total) * 100)} %`
+      : null;
+  const nameInside = widthPx === 0 || widthPx >= (showFaces ? facesWidth + 64 : 56);
   const dragging = drag !== null && drag.moved;
 
   return (
@@ -295,13 +297,13 @@ export default function GanttBar({
           }
           onStartRename();
         }}
-        className={`group absolute top-1/2 h-9 -translate-y-1/2 touch-none transition-[scale,box-shadow] duration-200 select-none ${
+        className={`group absolute top-1/2 flex h-7 -translate-y-1/2 items-center touch-none transition-[scale,box-shadow] duration-200 select-none ${
           dragging
             ? "z-20 cursor-grabbing"
             : readOnly
               ? "cursor-default"
               : "cursor-grab hover:scale-[1.02]"
-        } rounded-lg ${clippedLeft ? "rounded-l-none" : ""} ${clippedRight ? "rounded-r-none" : ""} ${spec.bar} ${
+        } rounded-md ${clippedLeft ? "rounded-l-none" : ""} ${clippedRight ? "rounded-r-none" : ""} ${spec.bar} ${
           selected
             ? "shadow-[0_0_0_2px_#ffffff,0_0_0_4px_var(--color-ink)]"
             : readOnly
@@ -310,54 +312,63 @@ export default function GanttBar({
         } focus-visible:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_var(--color-ink)] focus:outline-hidden`}
         style={style}
       >
-        {showAvatar && !editing && (
-          <span className="pointer-events-none absolute top-1/2 left-1.5 -translate-y-1/2">
-            <Avatar person={person} className="size-6" />
+        {showFaces && !editing && (
+          <span className="pointer-events-none flex shrink-0 items-center pl-1">
+            {faces.map((p, i) => (
+              <span key={p.id} className={i > 0 ? "-ml-1.75" : ""}>
+                <Avatar person={p} className="size-5 ring-1 ring-white" />
+              </span>
+            ))}
+            {extra > 0 && (
+              <span className="-ml-1.75 flex size-5 items-center justify-center rounded-full bg-white/85 text-[0.5625rem] font-semibold text-ink ring-1 ring-white">
+                +{extra}
+              </span>
+            )}
           </span>
         )}
         {nameInside && !editing && (
-          <p
-            className={`pointer-events-none truncate pr-2.5 text-xs/9 font-semibold ${showAvatar ? "pl-8.5" : "pl-2.5"}`}
-          >
+          <p className="pointer-events-none min-w-0 flex-1 truncate pr-2 pl-1.5 text-[0.6875rem] font-semibold">
             {project.name || "Sans titre"}
+            {hoursLabel && (
+              <span className="pl-1.5 font-medium tabular-nums opacity-65">
+                {hoursLabel}
+              </span>
+            )}
           </p>
         )}
-        {/* resize handles — revealed by cursor, hinted by grips on hover */}
         {!clippedLeft && !readOnly && (
           <div
-            className="bar-handle absolute inset-y-0 left-0 flex w-2 items-center justify-center rounded-l-lg"
+            className="bar-handle absolute inset-y-0 left-0 flex w-2 items-center justify-center rounded-l-md"
             data-drag-mode="resize-l"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
           >
-            <span className="h-3 w-0.5 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-40" />
+            <span className="h-2.5 w-0.5 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-40" />
           </div>
         )}
         {!clippedRight && !readOnly && (
           <div
-            className="bar-handle absolute inset-y-0 right-0 flex w-2 items-center justify-center rounded-r-lg"
+            className="bar-handle absolute inset-y-0 right-0 flex w-2 items-center justify-center rounded-r-md"
             data-drag-mode="resize-r"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
           >
-            <span className="h-3 w-0.5 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-40" />
+            <span className="h-2.5 w-0.5 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-40" />
           </div>
         )}
       </div>
 
-      {/* Name beside short bars */}
       {!nameInside && !editing && (
         <p
-          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 truncate text-xs font-semibold ${spec.outsideText}`}
+          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 truncate text-[0.6875rem] font-semibold ${spec.outsideText}`}
           style={{ left: leftPx + widthPx + 8, maxWidth: "12rem" }}
         >
           {project.name || "Sans titre"}
         </p>
       )}
 
-      {/* Dates tooltip while dragging */}
       {dragging && (
         <div
           className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full rounded-lg bg-ink px-2.5 py-1.5 whitespace-nowrap text-white shadow-float"
@@ -369,7 +380,6 @@ export default function GanttBar({
         </div>
       )}
 
-      {/* Inline rename */}
       {editing && (
         <NameInput
           defaultValue={project.name}
@@ -432,7 +442,7 @@ function NameInput({
         }
       }}
       onBlur={(e) => onCommit(e.target.value, false)}
-      className="absolute top-1/2 z-20 w-52 rounded-lg bg-white px-3 py-2 text-sm caret-rausch shadow-float outline -outline-offset-1 outline-black/10 placeholder:text-mute [translate:0_-50%]"
+      className="absolute top-1/2 z-20 w-52 rounded-lg bg-white px-3 py-1.5 text-xs caret-rausch shadow-float outline -outline-offset-1 outline-black/10 placeholder:text-mute [translate:0_-50%]"
       style={{ left: leftPx }}
     />
   );

@@ -30,11 +30,11 @@ import GanttBar from "@/components/gantt-bar";
 import MoonMoonIcon from "@/components/moonmoon-icon";
 import Tip from "@/components/tip";
 
-const DEFAULT_VISIBLE_DAYS = 91; // default zoom: three months across the viewport
+const DEFAULT_VISIBLE_DAYS = 91;
 const MIN_VISIBLE_DAYS = 21;
 const MAX_VISIBLE_DAYS = 420;
 const MONTH_DAYS = 30.44;
-const HEADER_REM = "3.25rem"; // months row (2.25) + sparkline row (1)
+const HEADER_REM = "3.25rem"; // months row + sparkline row
 
 export interface GanttGroup {
   key: string;
@@ -54,6 +54,9 @@ const Gantt = forwardRef<
   {
     rangeStartYear: number;
     yearCount: number;
+    mode: "members" | "projects";
+    onModeChange: (mode: "members" | "projects") => void;
+    peopleById: Map<string, Person>;
     groups: GanttGroup[];
     visibleIds: Set<string>;
     filtersActive: boolean;
@@ -69,7 +72,12 @@ const Gantt = forwardRef<
     onCreateRange: (start: number, end: number, personId: string | null) => void;
     onToggleSelect: (id: string, additive: boolean) => void;
     onOpenPopover: (id: string, x: number, y: number) => void;
-    onMoveDrop: (id: string, deltaDays: number, targetGroupKey: string | null) => void;
+    onMoveDrop: (
+      id: string,
+      deltaDays: number,
+      targetGroupKey: string | null,
+      sourceGroupKey: string,
+    ) => void;
     onResize: (id: string, deltaStart: number, deltaEnd: number) => void;
     onStartRename: (id: string) => void;
     onDuplicate: (id: string) => void;
@@ -81,6 +89,9 @@ const Gantt = forwardRef<
   {
     rangeStartYear,
     yearCount,
+    mode,
+    onModeChange,
+    peopleById,
     groups,
     visibleIds,
     filtersActive,
@@ -194,7 +205,6 @@ const Gantt = forwardRef<
     [scrollToDay, todayIdx, dayWidth],
   );
 
-  /* Initial position: today centered. On zoom/resize, hold the anchor. */
   useLayoutEffect(() => {
     if (dayWidth === 0) return;
     if (!initialScrollRef.current) {
@@ -214,13 +224,12 @@ const Gantt = forwardRef<
   }, [dayWidth, leftCol]);
 
   const zoomBy = useCallback(
-    (factor: number, anchorDay?: number, anchorScreenX?: number) => {
+    (factor: number) => {
       const el = scrollerRef.current;
       if (!el) return;
       pendingAnchorRef.current = {
-        day: anchorDay ?? centerDayRef.current,
-        screenX:
-          anchorScreenX ?? el.scrollLeft + (leftCol + el.clientWidth) / 2 - el.scrollLeft,
+        day: centerDayRef.current,
+        screenX: (leftCol + el.clientWidth) / 2,
       };
       setVisibleDays((v) =>
         clamp(Math.round(v * factor), MIN_VISIBLE_DAYS, MAX_VISIBLE_DAYS),
@@ -229,7 +238,6 @@ const Gantt = forwardRef<
     [leftCol],
   );
 
-  /* Pinch / ⌘-wheel zoom, anchored under the cursor */
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -282,23 +290,44 @@ const Gantt = forwardRef<
     });
   }, [loaded, groups.length]);
 
-  const flatProjects = groups.flatMap((g) => g.projects);
+  const flatProjects = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Project[] = [];
+    for (const g of groups) {
+      for (const p of g.projects) {
+        if (!seen.has(p.id)) {
+          seen.add(p.id);
+          list.push(p);
+        }
+      }
+    }
+    return list;
+  }, [groups]);
+
+  const rowKeys = groups.flatMap((g) => {
+    if (mode === "projects") {
+      const p = g.projects[0];
+      const assignees = p.assignees.length > 0 ? p.assignees : ["__none"];
+      return assignees.map((a) => `${p.id}::${a}`);
+    }
+    return g.projects.map((p) => `${g.key}::${p.id}`);
+  });
 
   useLayoutEffect(() => {
     const prev = prevTopsRef.current;
     const moved: { el: HTMLDivElement; delta: number }[] = [];
-    for (const p of flatProjects) {
-      const el = rowRefs.current.get(p.id);
+    for (const key of rowKeys) {
+      const el = rowRefs.current.get(key);
       if (!el) continue;
-      const before = prev.get(p.id);
+      const before = prev.get(key);
       const after = el.offsetTop;
       if (before !== undefined && before !== after && el.offsetHeight > 0) {
         moved.push({ el, delta: before - after });
       }
-      prev.set(p.id, after);
+      prev.set(key, after);
     }
-    for (const id of [...prev.keys()]) {
-      if (!flatProjects.some((p) => p.id === id)) prev.delete(id);
+    for (const key of [...prev.keys()]) {
+      if (!rowKeys.includes(key)) prev.delete(key);
     }
     if (reducedMotion() || !enteredRef.current) return;
     for (const { el, delta } of moved) {
@@ -332,16 +361,19 @@ const Gantt = forwardRef<
     if (!under || under.closest("[data-no-pan]")) return;
 
     if (e.altKey && !readOnly && dayWidth > 0) {
-      // draw a new project at the chosen duration
       const rect = el.getBoundingClientRect();
       const day = dayAtClientX(e.clientX);
       const groupKey = under.closest<HTMLElement>("[data-group]")?.dataset.group ?? null;
+      const personKey =
+        mode === "members" && groupKey && groupKey !== "none" && peopleById.has(groupKey)
+          ? groupKey
+          : null;
       drawRef.current = {
         anchor: day,
-        personKey: groupKey && groupKey !== "none" ? groupKey : null,
+        personKey,
         top: el.scrollTop + (e.clientY - rect.top) - 52,
       };
-      setDraw({ start: day, end: day, personKey: drawRef.current.personKey, top: drawRef.current.top });
+      setDraw({ start: day, end: day, personKey, top: drawRef.current.top });
       el.setPointerCapture(e.pointerId);
       return;
     }
@@ -404,10 +436,14 @@ const Gantt = forwardRef<
     if (el.scrollLeft + (e.clientX - rect.left) < leftCol) return;
     const day = dayAtClientX(e.clientX);
     const groupKey = under.closest<HTMLElement>("[data-group]")?.dataset.group;
-    onCreate(day, groupKey && groupKey !== "none" ? groupKey : null);
+    const personKey =
+      mode === "members" && groupKey && groupKey !== "none" && peopleById.has(groupKey)
+        ? groupKey
+        : null;
+    onCreate(day, personKey);
   };
 
-  /* ----- focus-day marker drag ----- */
+  /* ----- focus-day marker ----- */
 
   const onMarkerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -423,9 +459,9 @@ const Gantt = forwardRef<
     markerDragRef.current = false;
   };
 
-  /* ----- derived: capacity, sparkline ----- */
+  /* ----- derived ----- */
 
-  const people = groups.map((g) => g.person).filter((p): p is Person => p !== null);
+  const people = [...peopleById.values()];
   const focusIso = isoFromDay(rangeStartYear, focusDay);
   const createStart = clamp(centerDayRef.current - 15, 0, totalDays - 30);
   const createStartIso = isoFromDay(rangeStartYear, createStart);
@@ -457,17 +493,136 @@ const Gantt = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flatProjects, peopleKey, totalDays, rangeStartYear]);
 
-  /* per-person snap candidates: the day after each project's end */
   const snapByPerson = useMemo(() => {
     const map = new Map<string, { id: string; day: number }[]>();
     for (const p of flatProjects) {
-      if (!p.person_id) continue;
-      const arr = map.get(p.person_id) ?? [];
-      arr.push({ id: p.id, day: dayIndex(p.end_date, rangeStartYear) + 2 });
-      map.set(p.person_id, arr);
+      for (const a of p.assignees) {
+        const arr = map.get(a) ?? [];
+        arr.push({ id: p.id, day: dayIndex(p.end_date, rangeStartYear) + 2 });
+        map.set(a, arr);
+      }
     }
     return map;
   }, [flatProjects, rangeStartYear]);
+
+  const snapStartsFor = (project: Project) => {
+    const days = new Set<number>();
+    for (const a of project.assignees) {
+      for (const s of snapByPerson.get(a) ?? []) {
+        if (s.id !== project.id) days.add(s.day);
+      }
+    }
+    return [...days];
+  };
+
+  const personsOf = (project: Project) =>
+    project.assignees
+      .map((a) => peopleById.get(a))
+      .filter((p): p is Person => Boolean(p));
+
+  const renderBar = (project: Project, groupKey: string) => (
+    <GanttBar
+      project={project}
+      persons={personsOf(project)}
+      rangeStartYear={rangeStartYear}
+      totalDays={totalDays}
+      dayWidth={dayWidth}
+      snapStarts={snapStartsFor(project)}
+      selected={selectedIds.has(project.id)}
+      editing={editingId === project.id}
+      born={bornId === project.id}
+      readOnly={readOnly}
+      onBornConsumed={onBornConsumed}
+      onSelect={(additive) => onToggleSelect(project.id, additive)}
+      onOpenPopover={(x, y) => onOpenPopover(project.id, x, y)}
+      onMoveDrop={(delta, target) => onMoveDrop(project.id, delta, target, groupKey)}
+      onResize={(ds, de) => onResize(project.id, ds, de)}
+      onStartRename={() => onStartRename(project.id)}
+      onCommitName={(name) => onCommitName(project.id, name)}
+    />
+  );
+
+  const rowActions = (project: Project) =>
+    !readOnly && (
+      <>
+        <Tip label="Dupliquer (⌘D)" side="left">
+          <button
+            type="button"
+            aria-label={`Dupliquer ${project.name || "le projet"}`}
+            onClick={() => onDuplicate(project.id)}
+            className="flex size-5 shrink-0 translate-x-1 items-center justify-center rounded-full text-ash opacity-0 transition-[opacity,translate] duration-200 group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:bg-white hover:text-ink focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
+          >
+            <svg viewBox="0 0 16 16" fill="none" className="size-3.5 shrink-0">
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </Tip>
+        <Tip label="Supprimer" side="left">
+          <button
+            type="button"
+            aria-label={`Supprimer ${project.name || "le projet"}`}
+            onClick={() => onRemoveMany([project.id])}
+            className="flex size-5 shrink-0 translate-x-1 items-center justify-center rounded-full text-alert opacity-0 transition-[opacity,translate] duration-200 delay-75 group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:bg-white focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
+          >
+            <svg viewBox="0 0 16 16" fill="none" className="size-3.5 shrink-0">
+              <path
+                d="M2.5 4h11M5.5 4V2.75a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4m1.75 0-.5 9a1 1 0 0 1-1 .95h-5.5a1 1 0 0 1-1-.95l-.5-9M6.5 7v4M9.5 7v4"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </Tip>
+      </>
+    );
+
+  const chevron = (open: boolean, key: string, label: string) => (
+    <Tip label={open ? "Replier" : "Déplier"} side="bottom">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${open ? "Replier" : "Déplier"} ${label}`}
+        onClick={() => onToggleGroup(key)}
+        className="relative flex size-5 shrink-0 items-center justify-center rounded-full text-mute hover:bg-cloud hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          className={`size-3.5 shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+        >
+          <path
+            d="M6 3.5 10.5 8 6 12.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </Tip>
+  );
+
+  const minis = (projects: Project[]) =>
+    projects.map((p) => {
+      const s = clamp(dayIndex(p.start_date, rangeStartYear), 0, totalDays - 1);
+      const e = clamp(dayIndex(p.end_date, rangeStartYear), 0, totalDays - 1);
+      return (
+        <span
+          key={p.id}
+          title={p.name}
+          className={`absolute top-1/2 h-1 -translate-y-1/2 rounded-full ${barSpec(p).mini}`}
+          style={{ left: s * dayWidth, width: Math.max(5, (e - s + 1) * dayWidth) }}
+        />
+      );
+    });
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -485,21 +640,40 @@ const Gantt = forwardRef<
           className="relative flex min-h-full flex-col"
           style={{ width: leftCol + totalWidth, minWidth: "100%" }}
         >
-          {/* Sticky header: months + studio-load sparkline */}
+          {/* Sticky header */}
           <div className="sticky top-0 z-30 shrink-0 border-b border-black/8 bg-white">
             <div className="flex h-9">
-              <p
+              <div
                 data-no-pan
-                title={`Charge du studio au ${formatDay(focusIso)}`}
-                className="sticky left-0 z-10 flex shrink-0 items-center gap-1.5 bg-white px-4 text-xs text-mute tabular-nums sm:px-6"
+                className="sticky left-0 z-10 flex shrink-0 items-center gap-2 bg-white px-3 sm:px-4"
                 style={{ width: leftCol }}
               >
-                {visibleCount} projet{visibleCount > 1 ? "s" : ""}
-                <span aria-hidden="true">·</span>
-                <span className={studioPct >= 100 ? "font-semibold text-alert" : ""}>
-                  {studioPct} %
+                <span className="flex shrink-0 rounded-full bg-cloud p-0.5">
+                  {(["members", "projects"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      aria-pressed={mode === m}
+                      onClick={() => onModeChange(m)}
+                      className={`rounded-full px-2 py-0.5 text-[0.625rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-ink ${
+                        mode === m ? "bg-white text-ink shadow-xs" : "text-ash hover:text-ink"
+                      }`}
+                    >
+                      {m === "members" ? "Membres" : "Projets"}
+                    </button>
+                  ))}
                 </span>
-              </p>
+                <span className="flex-1" />
+                <p
+                  title={`Charge du studio au ${formatDay(focusIso)}`}
+                  className="text-[0.625rem] whitespace-nowrap text-mute tabular-nums"
+                >
+                  {visibleCount} proj. ·{" "}
+                  <span className={studioPct >= 100 ? "font-semibold text-alert" : ""}>
+                    {studioPct} %
+                  </span>
+                </p>
+              </div>
               <div className="relative" style={{ width: totalWidth }}>
                 {months.map((m) => (
                   <div
@@ -507,12 +681,9 @@ const Gantt = forwardRef<
                     className={`absolute inset-y-0 flex items-center border-l border-black/6 pl-2 ${m.monthIndex % 2 === 1 ? "bg-cloud/70" : ""}`}
                     style={{ left: m.startDay * dayWidth, width: m.days * dayWidth }}
                   >
-                    <p className="text-xs font-medium whitespace-nowrap text-ash">
-                      {m.label}
-                    </p>
+                    <p className="text-xs font-medium whitespace-nowrap text-ash">{m.label}</p>
                   </div>
                 ))}
-                {/* focus-day marker */}
                 <button
                   type="button"
                   data-no-pan
@@ -527,7 +698,6 @@ const Gantt = forwardRef<
                 </button>
               </div>
             </div>
-            {/* sparkline */}
             <div className="flex h-4 border-t border-black/4">
               <span
                 data-no-pan
@@ -571,7 +741,7 @@ const Gantt = forwardRef<
             </div>
           </div>
 
-          {/* Grid overlay — month tints, week ticks, today + focus lines */}
+          {/* Grid overlay */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute bottom-0 z-0"
@@ -611,14 +781,13 @@ const Gantt = forwardRef<
               className="absolute inset-y-0 w-px bg-ink/45"
               style={{ left: (focusDay + 0.5) * dayWidth }}
             />
-            {/* draw preview */}
             {draw && (
               <div
-                className="absolute h-9 rounded-lg bg-black/6 outline-dashed outline-1 outline-stone"
+                className="absolute h-7 rounded-md bg-black/6 outline-dashed outline-1 outline-stone"
                 style={{
                   left: draw.start * dayWidth,
                   width: (draw.end - draw.start + 1) * dayWidth,
-                  top: Math.max(0, draw.top - 18),
+                  top: Math.max(0, draw.top - 14),
                 }}
               />
             )}
@@ -629,6 +798,103 @@ const Gantt = forwardRef<
             const open = !closedGroups.has(group.key);
             const groupVisible = group.projects.filter((p) => visibleIds.has(p.id));
             const groupShown = !filtersActive || groupVisible.length > 0;
+
+            /* ----- projects mode: header = the project, rows = its assignees ----- */
+            if (mode === "projects") {
+              const project = group.projects[0];
+              const spec = barSpec(project);
+              const assignees = personsOf(project);
+              const hoursLabel =
+                project.hours_total && project.hours_total > 0
+                  ? `${project.hours_done ?? 0}/${project.hours_total}h · ${Math.round(((project.hours_done ?? 0) / project.hours_total) * 100)} %`
+                  : null;
+              return (
+                <div
+                  key={group.key}
+                  data-group={group.key}
+                  ref={(el) => {
+                    if (el) groupRefs.current.set(group.key, el);
+                    else groupRefs.current.delete(group.key);
+                  }}
+                >
+                  <div
+                    className={`flex overflow-clip transition-[height,opacity] duration-300 ${groupShown ? "h-10 opacity-100" : "h-0 opacity-0"}`}
+                  >
+                    <div
+                      data-no-pan
+                      className="group/row sticky left-0 z-30 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-2 transition-colors hover:bg-cloud/70 sm:pl-3"
+                      style={{ width: leftCol }}
+                    >
+                      {chevron(open, group.key, project.name || "Sans titre")}
+                      <button
+                        type="button"
+                        aria-label={`Statut : ${spec.label}`}
+                        title={spec.label}
+                        onClick={(e) => {
+                          if (readOnly) return;
+                          const r = e.currentTarget.getBoundingClientRect();
+                          onOpenPopover(project.id, r.left, r.bottom + 6);
+                        }}
+                        className="relative size-2 shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                      >
+                        <span className={`absolute inset-0 rounded-full ${spec.dot}`} />
+                      </button>
+                      <p
+                        className={`min-w-0 flex-1 truncate text-xs font-semibold ${project.status === "archive" ? "text-mute" : ""}`}
+                      >
+                        {project.name || "Sans titre"}
+                      </p>
+                      {project.moonmoon && <MoonMoonIcon className="size-3.5" />}
+                      {hoursLabel && (
+                        <span className="shrink-0 text-[0.625rem] text-mute tabular-nums">
+                          {hoursLabel}
+                        </span>
+                      )}
+                      {rowActions(project)}
+                    </div>
+                    <div className="relative border-b border-black/4" style={{ width: totalWidth }}>
+                      <div
+                        aria-hidden="true"
+                        className={`absolute inset-0 transition-opacity duration-200 ${open ? "opacity-0" : "opacity-100"}`}
+                      >
+                        {minis([project])}
+                      </div>
+                    </div>
+                  </div>
+
+                  {(assignees.length > 0 ? assignees : [null]).map((person) => {
+                    const rowKey = `${project.id}::${person?.id ?? "__none"}`;
+                    const visible = open && groupShown && visibleIds.has(project.id);
+                    return (
+                      <div
+                        key={rowKey}
+                        ref={(el) => {
+                          if (el) rowRefs.current.set(rowKey, el);
+                          else rowRefs.current.delete(rowKey);
+                        }}
+                        className={`flex overflow-clip transition-[height,opacity] duration-300 ${visible ? "h-10 opacity-100" : "h-0 opacity-0"}`}
+                      >
+                        <div
+                          data-no-pan
+                          className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-6 sm:pl-9"
+                          style={{ width: leftCol }}
+                        >
+                          <Avatar person={person} className="size-5" />
+                          <p className={`min-w-0 flex-1 truncate text-xs ${person ? "" : "text-mute"}`}>
+                            {person?.name ?? "Non assigné"}
+                          </p>
+                        </div>
+                        <div className="relative border-b border-black/4" style={{ width: totalWidth }}>
+                          {renderBar(project, group.key)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            /* ----- members mode ----- */
             const load = group.person
               ? personLoad(flatProjects, group.person.id, focusIso, focusIso)
               : 0;
@@ -644,44 +910,18 @@ const Gantt = forwardRef<
                   else groupRefs.current.delete(group.key);
                 }}
               >
-                {/* Group header */}
                 <div
-                  className={`flex overflow-clip transition-[height,opacity] duration-300 ${groupShown ? "h-12 opacity-100" : "h-0 opacity-0"}`}
+                  className={`flex overflow-clip transition-[height,opacity] duration-300 ${groupShown ? "h-10 opacity-100" : "h-0 opacity-0"}`}
                 >
                   <div
                     data-no-pan
-                    className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-2 sm:pl-3.5"
+                    className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-2 sm:pl-3"
                     style={{ width: leftCol }}
                   >
-                    <Tip
-                      label={open ? "Replier" : "Déplier"}
-                      side="bottom"
-                    >
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        aria-label={`${open ? "Replier" : "Déplier"} ${group.person?.name ?? "Non assigné"}`}
-                        onClick={() => onToggleGroup(group.key)}
-                        className="relative flex size-6 shrink-0 items-center justify-center rounded-full text-mute hover:bg-cloud hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
-                      >
-                        <svg
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          className={`size-4 shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
-                        >
-                          <path
-                            d="M6 3.5 10.5 8 6 12.5"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                    </Tip>
-                    <Avatar person={group.person} className="size-7" />
+                    {chevron(open, group.key, group.person?.name ?? "Non assigné")}
+                    <Avatar person={group.person} className="size-6" />
                     <p
-                      className={`min-w-0 truncate text-sm font-semibold ${group.person ? "" : "text-ash"}`}
+                      className={`min-w-0 truncate text-xs font-semibold ${group.person ? "" : "text-ash"}`}
                     >
                       {group.person?.name ?? "Non assigné"}
                     </p>
@@ -690,7 +930,7 @@ const Gantt = forwardRef<
                         title={`${load} projet${load > 1 ? "s" : ""} au ${formatDay(focusIso)} (max ${group.person.capacity})`}
                         className="flex shrink-0 items-center gap-1.5"
                       >
-                        <span className="h-1 w-8 overflow-hidden rounded-full bg-black/10">
+                        <span className="h-1 w-7 overflow-hidden rounded-full bg-black/10">
                           <span
                             className="block h-full rounded-full bg-leaf transition-[width] duration-300"
                             style={{
@@ -698,12 +938,12 @@ const Gantt = forwardRef<
                             }}
                           />
                         </span>
-                        <span className="text-xs text-mute tabular-nums">
+                        <span className="text-[0.625rem] text-mute tabular-nums">
                           {load}/{group.person.capacity}
                         </span>
                       </span>
                     ) : (
-                      <p className="text-xs text-mute tabular-nums">
+                      <p className="text-[0.625rem] text-mute tabular-nums">
                         {group.projects.length}
                       </p>
                     )}
@@ -718,13 +958,13 @@ const Gantt = forwardRef<
                             if (full) return;
                             onCreate(createStart, group.person?.id ?? null);
                           }}
-                          className={`relative flex size-6 items-center justify-center rounded-full transition-transform outline -outline-offset-1 focus-visible:outline-2 focus-visible:outline-ink ${
+                          className={`relative flex size-5 items-center justify-center rounded-full transition-transform outline -outline-offset-1 focus-visible:outline-2 focus-visible:outline-ink ${
                             full
                               ? "cursor-not-allowed text-stone outline-black/5"
                               : "text-ash outline-hairline hover:bg-cloud hover:text-ink active:scale-90"
                           }`}
                         >
-                          <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                          <svg viewBox="0 0 16 16" fill="none" className="size-3.5 shrink-0">
                             <path
                               d="M8 3.5v9M3.5 8h9"
                               stroke="currentColor"
@@ -742,54 +982,32 @@ const Gantt = forwardRef<
                       </span>
                     )}
                   </div>
-                  {/* Collapsed minis */}
                   <div className="relative border-b border-black/4" style={{ width: totalWidth }}>
                     <div
                       aria-hidden="true"
                       className={`absolute inset-0 transition-opacity duration-200 ${open ? "opacity-0" : "opacity-100"}`}
                     >
-                      {group.projects.map((p) => {
-                        const s = clamp(dayIndex(p.start_date, rangeStartYear), 0, totalDays - 1);
-                        const e = clamp(dayIndex(p.end_date, rangeStartYear), 0, totalDays - 1);
-                        return (
-                          <span
-                            key={p.id}
-                            title={p.name}
-                            className={`absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full ${barSpec(p).mini}`}
-                            style={{
-                              left: s * dayWidth,
-                              width: Math.max(6, (e - s + 1) * dayWidth),
-                            }}
-                          />
-                        );
-                      })}
+                      {minis(group.projects)}
                     </div>
                   </div>
                 </div>
 
-                {/* Project rows */}
                 {group.projects.map((project) => {
+                  const rowKey = `${group.key}::${project.id}`;
                   const visible = open && groupShown && visibleIds.has(project.id);
                   const spec = barSpec(project);
-                  const pct =
-                    project.hours_total && project.hours_total > 0
-                      ? Math.round(((project.hours_done ?? 0) / project.hours_total) * 100)
-                      : null;
-                  const snapStarts = (snapByPerson.get(project.person_id ?? "") ?? [])
-                    .filter((s) => s.id !== project.id)
-                    .map((s) => s.day);
                   return (
                     <div
-                      key={project.id}
+                      key={rowKey}
                       ref={(el) => {
-                        if (el) rowRefs.current.set(project.id, el);
-                        else rowRefs.current.delete(project.id);
+                        if (el) rowRefs.current.set(rowKey, el);
+                        else rowRefs.current.delete(rowKey);
                       }}
-                      className={`flex overflow-clip transition-[height,opacity] duration-300 ${visible ? "h-12 opacity-100" : "h-0 opacity-0"}`}
+                      className={`flex overflow-clip transition-[height,opacity] duration-300 ${visible ? "h-10 opacity-100" : "h-0 opacity-0"}`}
                     >
                       <div
                         data-no-pan
-                        className="group/row sticky left-0 z-20 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-7 transition-colors hover:bg-cloud/70 sm:pl-12"
+                        className="group/row sticky left-0 z-20 flex shrink-0 items-center gap-2 border-b border-black/4 bg-white pr-3 pl-6 transition-colors hover:bg-cloud/70 sm:pl-9"
                         style={{ width: leftCol }}
                       >
                         <button
@@ -801,93 +1019,25 @@ const Gantt = forwardRef<
                             const r = e.currentTarget.getBoundingClientRect();
                             onOpenPopover(project.id, r.left, r.bottom + 6);
                           }}
-                          className="relative size-2.5 shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                          className="relative size-2 shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                         >
                           <span className={`absolute inset-0 rounded-full ${spec.dot}`} />
                         </button>
                         <p
-                          className={`min-w-0 flex-1 truncate text-sm ${project.status === "archive" ? "text-mute" : ""}`}
+                          className={`min-w-0 flex-1 truncate text-xs ${project.status === "archive" ? "text-mute" : ""}`}
                         >
                           {project.name || "Sans titre"}
                         </p>
-                        {project.moonmoon && <MoonMoonIcon className="size-4" />}
-                        {pct !== null && (
+                        {project.assignees.length > 1 && (
                           <span className="shrink-0 text-[0.625rem] text-mute tabular-nums">
-                            {project.hours_done ?? 0}/{project.hours_total}h · {pct} %
+                            ×{project.assignees.length}
                           </span>
                         )}
-                        {!readOnly && (
-                          <>
-                            <Tip label="Dupliquer (⌘D)" side="left">
-                              <button
-                                type="button"
-                                aria-label={`Dupliquer ${project.name || "le projet"}`}
-                                onClick={() => onDuplicate(project.id)}
-                                className="flex size-6 shrink-0 translate-x-1 items-center justify-center rounded-full text-ash opacity-0 transition-[opacity,translate] duration-200 group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:bg-white hover:text-ink focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
-                              >
-                                <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
-                                  <rect
-                                    x="5.5"
-                                    y="5.5"
-                                    width="8"
-                                    height="8"
-                                    rx="1.5"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                  />
-                                  <path
-                                    d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                  />
-                                </svg>
-                              </button>
-                            </Tip>
-                            <Tip label="Supprimer" side="left">
-                              <button
-                                type="button"
-                                aria-label={`Supprimer ${project.name || "le projet"}`}
-                                onClick={() => onRemoveMany([project.id])}
-                                className="flex size-6 shrink-0 translate-x-1 items-center justify-center rounded-full text-alert opacity-0 transition-[opacity,translate] duration-200 delay-75 group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:bg-white focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
-                              >
-                                <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
-                                  <path
-                                    d="M2.5 4h11M5.5 4V2.75a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4m1.75 0-.5 9a1 1 0 0 1-1 .95h-5.5a1 1 0 0 1-1-.95l-.5-9M6.5 7v4M9.5 7v4"
-                                    stroke="currentColor"
-                                    strokeWidth="1.4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                </svg>
-                              </button>
-                            </Tip>
-                          </>
-                        )}
+                        {project.moonmoon && <MoonMoonIcon className="size-3.5" />}
+                        {rowActions(project)}
                       </div>
-                      <div
-                        className="relative border-b border-black/4"
-                        style={{ width: totalWidth }}
-                      >
-                        <GanttBar
-                          project={project}
-                          person={group.person}
-                          rangeStartYear={rangeStartYear}
-                          totalDays={totalDays}
-                          dayWidth={dayWidth}
-                          snapStarts={snapStarts}
-                          selected={selectedIds.has(project.id)}
-                          editing={editingId === project.id}
-                          born={bornId === project.id}
-                          readOnly={readOnly}
-                          onBornConsumed={onBornConsumed}
-                          onSelect={(additive) => onToggleSelect(project.id, additive)}
-                          onOpenPopover={(x, y) => onOpenPopover(project.id, x, y)}
-                          onMoveDrop={(delta, target) => onMoveDrop(project.id, delta, target)}
-                          onResize={(ds, de) => onResize(project.id, ds, de)}
-                          onStartRename={() => onStartRename(project.id)}
-                          onCommitName={(name) => onCommitName(project.id, name)}
-                        />
+                      <div className="relative border-b border-black/4" style={{ width: totalWidth }}>
+                        {renderBar(project, group.key)}
                       </div>
                     </div>
                   );

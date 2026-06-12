@@ -53,6 +53,25 @@ export default function AppHeader({
   onLogout?: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const shareCheckRef = useRef<HTMLSpanElement>(null);
+
+  const handleShare = () => {
+    onShare?.();
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 1600);
+  };
+
+  useEffect(() => {
+    if (shareCopied && shareCheckRef.current && !reducedMotion()) {
+      animate(shareCheckRef.current, {
+        scale: [0.4, 1],
+        rotate: [-20, 0],
+        duration: 350,
+        ease: "outBack(2.5)",
+      });
+    }
+  }, [shareCopied]);
 
   return (
     <header className="flex shrink-0 items-center justify-between gap-4 border-b border-black/8 px-4 py-3 sm:px-6">
@@ -155,16 +174,35 @@ export default function AppHeader({
           Aujourd&rsquo;hui
         </button>
         {onShare && (
-          <Tip label="Copier le lien lecture seule">
-            <button type="button" onClick={onShare} aria-label="Partager en lecture seule" className={iconBtn}>
-              <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
-                <path
-                  d="M6.5 9.5 9.5 6.5M7.5 4.75 9 3.25a2.47 2.47 0 0 1 3.5 0l.25.25a2.47 2.47 0 0 1 0 3.5L11.25 8.5M8.5 11.25 7 12.75a2.47 2.47 0 0 1-3.5 0l-.25-.25a2.47 2.47 0 0 1 0-3.5L4.75 7.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
+          <Tip label={shareCopied ? "Copié !" : "Copier le lien lecture seule"}>
+            <button
+              type="button"
+              onClick={handleShare}
+              aria-label="Partager en lecture seule"
+              className={iconBtn}
+            >
+              {shareCopied ? (
+                <span ref={shareCheckRef} className="inline-flex">
+                  <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                    <path
+                      d="m3 8.5 3.2 3.2L13 5"
+                      stroke="var(--color-leaf)"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              ) : (
+                <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                  <path
+                    d="M6.5 9.5 9.5 6.5M7.5 4.75 9 3.25a2.47 2.47 0 0 1 3.5 0l.25.25a2.47 2.47 0 0 1 0 3.5L11.25 8.5M8.5 11.25 7 12.75a2.47 2.47 0 0 1-3.5 0l-.25-.25a2.47 2.47 0 0 1 0-3.5L4.75 7.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
             </button>
           </Tip>
         )}

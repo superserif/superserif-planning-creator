@@ -16,7 +16,8 @@ create table if not exists projects (
   end_date date not null,
   status text not null default 'devise'
     check (status in ('devise','demarre','termine','archive')),
-  person_id uuid references people(id) on delete set null,
+  person_id uuid references people(id) on delete set null, -- hérité, remplacé par assignees
+  assignees uuid[] not null default '{}',
   moonmoon boolean not null default false,
   hours_done int not null default 0,
   hours_total int,

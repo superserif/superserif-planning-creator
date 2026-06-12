@@ -59,6 +59,7 @@ export default function LineupApp() {
   const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
   const [centerLabel, setCenterLabel] = useState("");
   const [centerDay, setCenterDay] = useState(0);
+  const [viewMode, setViewMode] = useState<"members" | "projects">("members");
 
   const ganttRef = useRef<GanttHandle>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -191,7 +192,7 @@ export default function LineupApp() {
         start_date: startIso,
         end_date: endIso,
         status: "devise",
-        person_id: personId,
+        assignees: personId ? [personId] : [],
         moonmoon: false,
         hours_done: 0,
         hours_total: null,
@@ -263,23 +264,38 @@ export default function LineupApp() {
     [findProject, updateProject],
   );
 
-  const assignPerson = useCallback(
-    (id: string, personId: string | null) => {
+  /** Add or remove one assignee — the task stays one block, shared. */
+  const toggleAssignee = useCallback(
+    (id: string, personId: string) => {
       const project = findProject(id);
       if (!project) return;
-      if (personId) {
-        const person = data.people.find((p) => p.id === personId);
-        if (
-          person &&
-          isAtCapacity(data.projects, person, project.start_date, project.end_date, id)
-        ) {
-          capacityToast(person);
-          return;
-        }
+      if (project.assignees.includes(personId)) {
+        updateProject({
+          ...project,
+          assignees: project.assignees.filter((a) => a !== personId),
+        });
+        return;
       }
-      updateProject({ ...project, person_id: personId });
+      const person = data.people.find((p) => p.id === personId);
+      if (
+        person &&
+        isAtCapacity(data.projects, person, project.start_date, project.end_date, id)
+      ) {
+        capacityToast(person);
+        return;
+      }
+      updateProject({ ...project, assignees: [...project.assignees, personId] });
     },
     [findProject, data.people, data.projects, updateProject, capacityToast],
+  );
+
+  const setHours = useCallback(
+    (id: string, done: number | null, total: number | null) => {
+      const project = findProject(id);
+      if (!project) return;
+      updateProject({ ...project, hours_done: done ?? 0, hours_total: total });
+    },
+    [findProject, updateProject],
   );
 
   const toggleMoonmoon = useCallback(
@@ -302,8 +318,8 @@ export default function LineupApp() {
         1;
       const start = shiftIso(project.end_date, 2);
       const end = shiftIso(start, duration - 1);
-      if (project.person_id) {
-        const person = data.people.find((p) => p.id === project.person_id);
+      for (const assigneeId of project.assignees) {
+        const person = data.people.find((p) => p.id === assigneeId);
         if (person && isAtCapacity(data.projects, person, start, end)) {
           capacityToast(person);
           return;
@@ -342,37 +358,36 @@ export default function LineupApp() {
 
   /** End of a bar drag: shift dates (batch when multi-selected), maybe reassign. */
   const handleMoveDrop = useCallback(
-    (id: string, delta: number, targetGroupKey: string | null) => {
+    (id: string, delta: number, targetGroupKey: string | null, sourceGroupKey: string) => {
       const project = findProject(id);
       if (!project) return;
 
+      // vertical reassign only makes sense between member groups
+      const sourceIsPerson = data.people.some((p) => p.id === sourceGroupKey);
       const targetPerson =
         targetGroupKey && targetGroupKey !== "none"
           ? (data.people.find((p) => p.id === targetGroupKey) ?? null)
           : null;
-      const reassignTo =
-        targetGroupKey === "none" && project.person_id
-          ? null
-          : targetPerson && targetPerson.id !== project.person_id
-            ? targetPerson.id
-            : undefined; // undefined = no reassign
+      const dropToNone = targetGroupKey === "none" && sourceIsPerson;
+      const dropToOther =
+        targetPerson !== null &&
+        sourceIsPerson &&
+        targetPerson.id !== sourceGroupKey &&
+        !project.assignees.includes(targetPerson.id);
 
-      if (reassignTo !== undefined) {
+      if (dropToNone || dropToOther) {
         const start = shiftIso(project.start_date, delta);
         const end = shiftIso(project.end_date, delta);
-        if (reassignTo) {
-          const person = data.people.find((p) => p.id === reassignTo)!;
-          if (isAtCapacity(data.projects, person, start, end, id)) {
-            capacityToast(person);
+        if (dropToOther) {
+          if (isAtCapacity(data.projects, targetPerson, start, end, id)) {
+            capacityToast(targetPerson);
             return; // the bar springs back
           }
         }
-        updateProject({
-          ...project,
-          start_date: start,
-          end_date: end,
-          person_id: reassignTo,
-        });
+        const assignees = dropToNone
+          ? project.assignees.filter((a) => a !== sourceGroupKey)
+          : project.assignees.map((a) => (a === sourceGroupKey ? targetPerson!.id : a));
+        updateProject({ ...project, start_date: start, end_date: end, assignees });
         return;
       }
 
@@ -461,9 +476,10 @@ export default function LineupApp() {
       setData((d) => ({
         ...d,
         people: d.people.filter((p) => p.id !== id),
-        projects: d.projects.map((p) =>
-          p.person_id === id ? { ...p, person_id: null } : p,
-        ),
+        projects: d.projects.map((p) => ({
+          ...p,
+          assignees: p.assignees.filter((a) => a !== id),
+        })),
       }));
       if (filterPerson === id) setFilterPerson("");
       persist(() => store.deletePerson(id));
@@ -550,42 +566,86 @@ export default function LineupApp() {
 
   /* ----- derived ----- */
 
-  const groups = useMemo<GanttGroup[]>(() => {
+  const inRangeProjects = useMemo(() => {
     const total = daysInRange(rangeStartYear, YEAR_COUNT);
-    const inRange = data.projects.filter(
-      (p) =>
-        dayIndex(p.end_date, rangeStartYear) >= 0 &&
-        dayIndex(p.start_date, rangeStartYear) < total,
-    );
     const byStart = (a: Project, b: Project) =>
       a.start_date.localeCompare(b.start_date) || a.name.localeCompare(b.name);
+    return data.projects
+      .filter(
+        (p) =>
+          dayIndex(p.end_date, rangeStartYear) >= 0 &&
+          dayIndex(p.start_date, rangeStartYear) < total,
+      )
+      .sort(byStart);
+  }, [data.projects, rangeStartYear]);
+
+  const groups = useMemo<GanttGroup[]>(() => {
+    if (viewMode === "projects") {
+      // one group per project; its rows are the assignees
+      return inRangeProjects.map((p) => ({
+        key: p.id,
+        person: null,
+        projects: [p],
+      }));
+    }
     const peopleIds = new Set(data.people.map((p) => p.id));
     const result: GanttGroup[] = data.people.map((person) => ({
       key: person.id,
       person,
-      projects: inRange.filter((p) => p.person_id === person.id).sort(byStart),
+      projects: inRangeProjects.filter((p) => p.assignees.includes(person.id)),
     }));
-    const orphans = inRange
-      .filter((p) => !p.person_id || !peopleIds.has(p.person_id))
-      .sort(byStart);
+    const orphans = inRangeProjects.filter(
+      (p) => !p.assignees.some((a) => peopleIds.has(a)),
+    );
     if (orphans.length > 0) {
       result.push({ key: "none", person: null, projects: orphans });
     }
     return result;
-  }, [data.projects, data.people, rangeStartYear]);
+  }, [viewMode, inRangeProjects, data.people]);
 
   const visibleIds = useMemo(() => {
     const q = search.trim().toLowerCase();
     return new Set(
-      groups
-        .flatMap((g) => g.projects)
-        .filter((p) => !filterPerson || p.person_id === filterPerson)
+      inRangeProjects
+        .filter((p) => !filterPerson || p.assignees.includes(filterPerson))
         .filter((p) => !filterStatus || p.status === filterStatus)
         .filter((p) => !filterMoonmoon || p.moonmoon)
         .filter((p) => !q || p.name.toLowerCase().includes(q))
         .map((p) => p.id),
     );
-  }, [groups, filterPerson, filterStatus, filterMoonmoon, search]);
+  }, [inRangeProjects, filterPerson, filterStatus, filterMoonmoon, search]);
+
+  const peopleById = useMemo(
+    () => new Map(data.people.map((p) => [p.id, p])),
+    [data.people],
+  );
+
+  /* Auto-start: a "Non démarré" whose start day has arrived becomes "En cours". */
+  useEffect(() => {
+    if (!loaded || readOnly) return;
+    const today = todayIso();
+    const due = data.projects.filter(
+      (p) => p.status === "devise" && p.start_date <= today,
+    );
+    if (due.length === 0) return;
+    const t = setTimeout(() => {
+      commit(
+        due.map((p) => ({
+          id: p.id,
+          before: p,
+          after: { ...p, status: "demarre" as Status },
+        })),
+        false,
+      );
+      setToast({
+        message:
+          due.length > 1
+            ? `${due.length} projets passés En cours (date de début atteinte)`
+            : `« ${due[0].name || "Sans titre"} » passé En cours (date de début atteinte)`,
+      });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [loaded, readOnly, data.projects, commit]);
 
   const filtersActive = Boolean(
     filterPerson || filterStatus || filterMoonmoon || search.trim(),
@@ -687,6 +747,9 @@ export default function LineupApp() {
         ref={ganttRef}
         rangeStartYear={rangeStartYear}
         yearCount={YEAR_COUNT}
+        mode={viewMode}
+        onModeChange={setViewMode}
+        peopleById={peopleById}
         groups={groups}
         visibleIds={visibleIds}
         filtersActive={filtersActive}
@@ -747,7 +810,8 @@ export default function LineupApp() {
           y={popover.y}
           onClose={() => setPopover(null)}
           onStatus={(status, origin) => setStatus(popoverProject.id, status, origin)}
-          onAssign={(personId) => assignPerson(popoverProject.id, personId)}
+          onToggleAssignee={(personId) => toggleAssignee(popoverProject.id, personId)}
+          onSetHours={(done, total) => setHours(popoverProject.id, done, total)}
           onDuplicate={() => duplicateProject(popoverProject.id)}
           onToggleMoonmoon={() => toggleMoonmoon(popoverProject.id)}
           onDelete={() => removeProjects([popoverProject.id])}

@@ -19,7 +19,8 @@ export default function ProjectPopover({
   y,
   onClose,
   onStatus,
-  onAssign,
+  onToggleAssignee,
+  onSetHours,
   onDuplicate,
   onToggleMoonmoon,
   onDelete,
@@ -31,7 +32,8 @@ export default function ProjectPopover({
   y: number;
   onClose: () => void;
   onStatus: (status: Status, origin: { x: number; y: number }) => void;
-  onAssign: (personId: string | null) => void;
+  onToggleAssignee: (personId: string) => void;
+  onSetHours: (done: number | null, total: number | null) => void;
   onDuplicate: () => void;
   onToggleMoonmoon: () => void;
   onDelete: () => void;
@@ -115,7 +117,7 @@ export default function ProjectPopover({
             <p className="pb-1.5 text-xs font-semibold text-ash">Assigné à</p>
             <div className="flex flex-wrap gap-1.5">
               {people.map((p) => {
-                const active = project.person_id === p.id;
+                const active = project.assignees.includes(p.id);
                 const full = !active && isPersonFull(p.id);
                 return (
                   <span key={p.id} className="group/assign relative">
@@ -126,7 +128,7 @@ export default function ProjectPopover({
                       aria-disabled={full}
                       onClick={() => {
                         if (full) return;
-                        onAssign(active ? null : p.id);
+                        onToggleAssignee(p.id);
                       }}
                       className={`shrink-0 rounded-full transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
                         active
@@ -152,6 +154,49 @@ export default function ProjectPopover({
             </div>
           </div>
         )}
+
+        {/* Heures réalisées / vendues — le bloc « 16/86h · % » de la barre */}
+        <div className="border-t border-black/6 px-2 py-2">
+          <p className="pb-1.5 text-xs font-semibold text-ash">Heures (faites / vendues)</p>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              name="hours-done"
+              aria-label="Heures réalisées"
+              min={0}
+              defaultValue={project.hours_done ?? 0}
+              onBlur={(e) =>
+                onSetHours(
+                  e.target.value === "" ? 0 : Math.max(0, Number(e.target.value)),
+                  project.hours_total ?? null,
+                )
+              }
+              className="w-16 rounded-lg px-2 py-1 text-sm tabular-nums outline -outline-offset-1 outline-hairline focus-visible:outline-2 focus-visible:outline-ink"
+            />
+            <span className="text-sm text-mute">/</span>
+            <input
+              type="number"
+              name="hours-total"
+              aria-label="Heures vendues"
+              min={0}
+              defaultValue={project.hours_total ?? ""}
+              placeholder="—"
+              onBlur={(e) =>
+                onSetHours(
+                  project.hours_done ?? 0,
+                  e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                )
+              }
+              className="w-16 rounded-lg px-2 py-1 text-sm tabular-nums outline -outline-offset-1 outline-hairline placeholder:text-mute focus-visible:outline-2 focus-visible:outline-ink"
+            />
+            <span className="text-sm text-mute">h</span>
+            {project.hours_total ? (
+              <span className="ml-auto text-xs font-semibold text-ash tabular-nums">
+                {Math.round(((project.hours_done ?? 0) / project.hours_total) * 100)} %
+              </span>
+            ) : null}
+          </div>
+        </div>
 
         <div className="border-t border-black/6 px-2 py-2">
           <label className="flex cursor-pointer items-center gap-2.5">

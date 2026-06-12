@@ -14,7 +14,8 @@ export interface Project {
   start_date: string; // ISO date YYYY-MM-DD, inclusive
   end_date: string; // ISO date YYYY-MM-DD, inclusive
   status: Status;
-  person_id: string | null;
+  /** Une tâche peut être portée par plusieurs personnes — même bloc, mêmes heures */
+  assignees: string[];
   /** Tag agence Moon-Moon */
   moonmoon?: boolean;
   /** Heures consommées / vendues — alimentées plus tard par l'API */

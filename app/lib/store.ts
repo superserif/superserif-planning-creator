@@ -37,7 +37,7 @@ function seed(): StoreData {
       start_date: shiftIso(t, -120),
       end_date: shiftIso(t, -75),
       status: "termine",
-      person_id: jj.id,
+      assignees: [jj.id],
     },
     {
       id: crypto.randomUUID(),
@@ -45,7 +45,7 @@ function seed(): StoreData {
       start_date: shiftIso(t, -60),
       end_date: shiftIso(t, 10),
       status: "demarre",
-      person_id: sylvain.id,
+      assignees: [sylvain.id],
     },
     {
       id: crypto.randomUUID(),
@@ -53,7 +53,7 @@ function seed(): StoreData {
       start_date: shiftIso(t, -15),
       end_date: shiftIso(t, 30),
       status: "demarre",
-      person_id: kiks.id,
+      assignees: [kiks.id],
     },
     {
       id: crypto.randomUUID(),
@@ -61,7 +61,7 @@ function seed(): StoreData {
       start_date: shiftIso(t, 20),
       end_date: shiftIso(t, 55),
       status: "devise",
-      person_id: jj.id,
+      assignees: [jj.id],
     },
     {
       id: crypto.randomUUID(),
@@ -69,7 +69,7 @@ function seed(): StoreData {
       start_date: shiftIso(t, 45),
       end_date: shiftIso(t, 90),
       status: "devise",
-      person_id: sylvain.id,
+      assignees: [sylvain.id],
     },
     {
       id: crypto.randomUUID(),
@@ -77,7 +77,7 @@ function seed(): StoreData {
       start_date: shiftIso(t, -150),
       end_date: shiftIso(t, -110),
       status: "archive",
-      person_id: kiks.id,
+      assignees: [kiks.id],
     },
   ];
   return { projects, people };
@@ -91,9 +91,14 @@ function createLocalStore(): Store {
         const data = JSON.parse(raw) as StoreData;
         // normalize data written by older versions
         data.people = data.people.map((p) => ({ ...p, capacity: p.capacity ?? 3 }));
-        data.projects = data.projects.map((p) =>
-          (p.status as string) === "a_demarrer" ? { ...p, status: "devise" } : p,
-        );
+        data.projects = data.projects.map((raw) => {
+          const legacy = raw as Project & { person_id?: string | null };
+          const p: Project = {
+            ...raw,
+            assignees: raw.assignees ?? (legacy.person_id ? [legacy.person_id] : []),
+          };
+          return (p.status as string) === "a_demarrer" ? { ...p, status: "devise" } : p;
+        });
         return data;
       }
     } catch {
@@ -137,9 +142,10 @@ function createLocalStore(): Store {
     async deletePerson(id) {
       const data = read();
       data.people = data.people.filter((x) => x.id !== id);
-      data.projects = data.projects.map((x) =>
-        x.person_id === id ? { ...x, person_id: null } : x,
-      );
+      data.projects = data.projects.map((x) => ({
+        ...x,
+        assignees: x.assignees.filter((a) => a !== id),
+      }));
       write(data);
     },
     subscribe(onChange) {
@@ -160,7 +166,7 @@ function createSupabaseStore(client: SupabaseClient): Store {
         client
           .from("projects")
           .select(
-            "id,name,start_date,end_date,status,person_id,moonmoon,hours_done,hours_total",
+            "id,name,start_date,end_date,status,assignees,moonmoon,hours_done,hours_total",
           ),
         client.from("people").select("id,name,avatar,capacity").order("name"),
       ]);
