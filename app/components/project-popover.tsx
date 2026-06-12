@@ -7,6 +7,7 @@ import { STATUSES, STATUS_ORDER } from "@/lib/types";
 import { formatDay } from "@/lib/dates";
 import { reducedMotion } from "@/lib/motion";
 import Avatar from "@/components/avatar";
+import MoonMoonIcon from "@/components/moonmoon-icon";
 
 const WIDTH = 248;
 
@@ -19,7 +20,8 @@ export default function ProjectPopover({
   onClose,
   onStatus,
   onAssign,
-  onRename,
+  onDuplicate,
+  onToggleMoonmoon,
   onDelete,
 }: {
   project: Project;
@@ -30,7 +32,8 @@ export default function ProjectPopover({
   onClose: () => void;
   onStatus: (status: Status, origin: { x: number; y: number }) => void;
   onAssign: (personId: string | null) => void;
-  onRename: () => void;
+  onDuplicate: () => void;
+  onToggleMoonmoon: () => void;
   onDelete: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -142,13 +145,32 @@ export default function ProjectPopover({
           </div>
         )}
 
+        <div className="border-t border-black/6 px-2 py-2">
+          <label className="flex cursor-pointer items-center gap-2.5">
+            <MoonMoonIcon className="size-4" />
+            <span className="min-w-0 flex-1 truncate text-sm">Moon-Moon</span>
+            <span className="group relative inline-flex w-9 shrink-0 rounded-full bg-black/10 p-0.5 inset-ring inset-ring-black/5 outline-offset-2 transition-colors duration-200 ease-in-out outline-ink has-checked:bg-ink has-focus-visible:outline-2">
+              <span className="aspect-square w-1/2 rounded-full bg-white shadow-xs ring-1 ring-black/5 transition-transform duration-200 ease-in-out group-has-checked:translate-x-full"></span>
+              <input
+                type="checkbox"
+                name="moonmoon"
+                aria-label="Tag Moon-Moon"
+                checked={Boolean(project.moonmoon)}
+                onChange={onToggleMoonmoon}
+                className="absolute inset-0 size-full appearance-none focus:outline-hidden"
+              />
+            </span>
+          </label>
+        </div>
+
         <div className="flex border-t border-black/6 pt-1">
           <button
             type="button"
-            onClick={onRename}
+            onClick={onDuplicate}
+            title="⌘D"
             className="flex-1 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-cloud focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink"
           >
-            Renommer
+            Dupliquer
           </button>
           <button
             type="button"

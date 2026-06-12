@@ -239,10 +239,12 @@ export default function GanttBar({
           }
           onStartRename();
         }}
-        className={`group absolute top-1/2 h-9 -translate-y-1/2 touch-none select-none ${
-          dragging ? "z-10 cursor-grabbing" : "cursor-grab"
+        className={`group absolute top-1/2 h-9 -translate-y-1/2 touch-none transition-[scale,box-shadow] duration-200 select-none ${
+          dragging ? "z-10 cursor-grabbing" : "cursor-grab hover:scale-[1.02]"
         } rounded-lg ${clippedLeft ? "rounded-l-none" : ""} ${clippedRight ? "rounded-r-none" : ""} ${spec.bar} ${
-          selected ? "shadow-[0_0_0_2px_var(--color-ink)]" : ""
+          selected
+            ? "shadow-[0_0_0_2px_var(--color-ink)]"
+            : "hover:shadow-[0_4px_12px_rgb(0_0_0/0.14)]"
         } focus-visible:shadow-[0_0_0_2px_var(--color-ink)] focus:outline-hidden`}
         style={style}
       >

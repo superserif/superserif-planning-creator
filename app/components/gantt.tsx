@@ -25,6 +25,7 @@ import { isAtCapacity, personLoad, studioLoadPct } from "@/lib/capacity";
 import { reducedMotion } from "@/lib/motion";
 import Avatar from "@/components/avatar";
 import GanttBar from "@/components/gantt-bar";
+import MoonMoonIcon from "@/components/moonmoon-icon";
 
 const VISIBLE_DAYS = 91; // default zoom: three months across the viewport
 const MONTH_DAYS = 30.44;
@@ -62,6 +63,8 @@ const Gantt = forwardRef<
     onOpenPopover: (id: string, x: number, y: number) => void;
     onDatesChange: (id: string, deltaStart: number, deltaEnd: number) => void;
     onStartRename: (id: string) => void;
+    onDuplicate: (id: string) => void;
+    onRemoveMany: (ids: string[]) => void;
     onCommitName: (id: string, name: string) => void;
     onCenterChange: (label: string, day: number) => void;
   }
@@ -84,6 +87,8 @@ const Gantt = forwardRef<
     onOpenPopover,
     onDatesChange,
     onStartRename,
+    onDuplicate,
+    onRemoveMany,
     onCommitName,
     onCenterChange,
   },
@@ -217,23 +222,40 @@ const Gantt = forwardRef<
     });
   }, [loaded, groups.length]);
 
-  /* FLIP: rows glide when their vertical position changes */
+  /* Rows: duplicated projects share a name, and a line */
+  const rowsOfGroup = (g: GanttGroup) => {
+    const byName = new Map<string, Project[]>();
+    for (const p of g.projects) {
+      const arr = byName.get(p.name);
+      if (arr) arr.push(p);
+      else byName.set(p.name, [p]);
+    }
+    return [...byName.entries()].map(([name, cases]) => ({
+      key: `${g.key}::${name || "__untitled"}`,
+      name,
+      cases,
+    }));
+  };
+
   const flatProjects = groups.flatMap((g) => g.projects);
+  const flatRowKeys = groups.flatMap((g) => rowsOfGroup(g).map((r) => r.key));
+
+  /* FLIP: rows glide when their vertical position changes */
   useLayoutEffect(() => {
     const prev = prevTopsRef.current;
     const moved: { el: HTMLDivElement; delta: number }[] = [];
-    for (const p of flatProjects) {
-      const el = rowRefs.current.get(p.id);
+    for (const key of flatRowKeys) {
+      const el = rowRefs.current.get(key);
       if (!el) continue;
-      const before = prev.get(p.id);
+      const before = prev.get(key);
       const after = el.offsetTop;
       if (before !== undefined && before !== after && el.offsetHeight > 0) {
         moved.push({ el, delta: before - after });
       }
-      prev.set(p.id, after);
+      prev.set(key, after);
     }
-    for (const id of [...prev.keys()]) {
-      if (!flatProjects.some((p) => p.id === id)) prev.delete(id);
+    for (const key of [...prev.keys()]) {
+      if (!flatRowKeys.includes(key)) prev.delete(key);
     }
     if (reducedMotion() || !enteredRef.current) return;
     for (const { el, delta } of moved) {
@@ -547,22 +569,26 @@ const Gantt = forwardRef<
                 </div>
               </div>
 
-              {/* Project rows */}
-              {group.projects.map((project) => {
-                const visible = open && groupShown && visibleIds.has(project.id);
-                const spec = STATUSES[project.status];
+              {/* Project rows — duplicated cases share a line */}
+              {rowsOfGroup(group).map((row) => {
+                const visible =
+                  open && groupShown && row.cases.some((c) => visibleIds.has(c.id));
+                const first = row.cases[0];
+                const last = row.cases[row.cases.length - 1];
+                const spec = STATUSES[first.status];
+                const hasMoonmoon = row.cases.some((c) => c.moonmoon);
                 return (
                   <div
-                    key={project.id}
+                    key={row.key}
                     ref={(el) => {
-                      if (el) rowRefs.current.set(project.id, el);
-                      else rowRefs.current.delete(project.id);
+                      if (el) rowRefs.current.set(row.key, el);
+                      else rowRefs.current.delete(row.key);
                     }}
                     className={`flex overflow-clip transition-[height,opacity] duration-300 ${visible ? "h-12 opacity-100" : "h-0 opacity-0"}`}
                   >
                     <div
                       data-no-pan
-                      className="sticky left-0 z-20 flex shrink-0 items-center gap-2.5 border-b border-black/4 bg-white pr-4 pl-7 sm:pl-12"
+                      className="group/row sticky left-0 z-20 flex shrink-0 items-center gap-2.5 border-b border-black/4 bg-white pr-3 pl-7 transition-colors hover:bg-cloud/70 sm:pl-12"
                       style={{ width: leftCol }}
                     >
                       <button
@@ -571,7 +597,7 @@ const Gantt = forwardRef<
                         title={spec.label}
                         onClick={(e) => {
                           const r = e.currentTarget.getBoundingClientRect();
-                          onOpenPopover(project.id, r.left, r.bottom + 6);
+                          onOpenPopover(first.id, r.left, r.bottom + 6);
                         }}
                         className="relative size-2.5 shrink-0 rounded-full transition-transform active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                       >
@@ -582,31 +608,83 @@ const Gantt = forwardRef<
                         />
                       </button>
                       <p
-                        className={`min-w-0 flex-1 truncate text-sm ${project.status === "archive" ? "text-mute" : ""}`}
+                        className={`min-w-0 flex-1 truncate text-sm ${first.status === "archive" ? "text-mute" : ""}`}
                       >
-                        {project.name || "Sans titre"}
+                        {row.name || "Sans titre"}
                       </p>
+                      {hasMoonmoon && <MoonMoonIcon className="size-4" />}
+                      {row.cases.length > 1 && (
+                        <span className="text-xs text-mute tabular-nums">
+                          ×{row.cases.length}
+                        </span>
+                      )}
+                      {/* hover actions, staggered in */}
+                      <button
+                        type="button"
+                        aria-label={`Dupliquer ${row.name || "le projet"}`}
+                        title="Dupliquer (⌘D)"
+                        onClick={() => onDuplicate(last.id)}
+                        className="flex size-6 shrink-0 translate-x-1 items-center justify-center rounded-full text-ash opacity-0 transition-[opacity,translate] duration-200 group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:bg-white hover:text-ink focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
+                      >
+                        <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                          <rect
+                            x="5.5"
+                            y="5.5"
+                            width="8"
+                            height="8"
+                            rx="1.5"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          />
+                          <path
+                            d="M10.5 3.5v-1a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Supprimer ${row.name || "le projet"}`}
+                        title="Supprimer"
+                        onClick={() => onRemoveMany(row.cases.map((c) => c.id))}
+                        className="flex size-6 shrink-0 translate-x-1 items-center justify-center rounded-full text-alert opacity-0 transition-[opacity,translate] duration-200 delay-75 group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:bg-white focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ink"
+                      >
+                        <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
+                          <path
+                            d="M2.5 4h11M5.5 4V2.75a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4m1.75 0-.5 9a1 1 0 0 1-1 .95h-5.5a1 1 0 0 1-1-.95l-.5-9M6.5 7v4M9.5 7v4"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
                     </div>
                     <div
                       className="relative border-b border-black/4"
                       style={{ width: totalWidth }}
                     >
-                      <GanttBar
-                        project={project}
-                        person={group.person}
-                        rangeStartYear={rangeStartYear}
-                        totalDays={totalDays}
-                        dayWidth={dayWidth}
-                        selected={selectedId === project.id}
-                        editing={editingId === project.id}
-                        born={bornId === project.id}
-                        onBornConsumed={onBornConsumed}
-                        onSelect={() => onSelect(project.id)}
-                        onOpenPopover={(x, y) => onOpenPopover(project.id, x, y)}
-                        onDatesChange={(ds, de) => onDatesChange(project.id, ds, de)}
-                        onStartRename={() => onStartRename(project.id)}
-                        onCommitName={(name) => onCommitName(project.id, name)}
-                      />
+                      {row.cases.map((project) => (
+                        <GanttBar
+                          key={project.id}
+                          project={project}
+                          person={group.person}
+                          rangeStartYear={rangeStartYear}
+                          totalDays={totalDays}
+                          dayWidth={dayWidth}
+                          selected={selectedId === project.id}
+                          editing={editingId === project.id}
+                          born={bornId === project.id}
+                          onBornConsumed={onBornConsumed}
+                          onSelect={() => onSelect(project.id)}
+                          onOpenPopover={(x, y) => onOpenPopover(project.id, x, y)}
+                          onDatesChange={(ds, de) => onDatesChange(project.id, ds, de)}
+                          onStartRename={() => onStartRename(project.id)}
+                          onCommitName={(name) => onCommitName(project.id, name)}
+                        />
+                      ))}
                     </div>
                   </div>
                 );

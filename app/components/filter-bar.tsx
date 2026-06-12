@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Person, Status } from "@/lib/types";
 import { STATUSES, STATUS_ORDER } from "@/lib/types";
 import Avatar from "@/components/avatar";
+import MoonMoonIcon from "@/components/moonmoon-icon";
 
 function Chevron() {
   return (
@@ -26,6 +27,8 @@ export default function FilterBar({
   people,
   filterPerson,
   filterStatus,
+  filterMoonmoon,
+  onFilterMoonmoon,
   search,
   localMode,
   searchRef,
@@ -39,6 +42,8 @@ export default function FilterBar({
   people: Person[];
   filterPerson: string;
   filterStatus: Status | "";
+  filterMoonmoon: boolean;
+  onFilterMoonmoon: (on: boolean) => void;
   search: string;
   localMode: boolean;
   searchRef: RefObject<HTMLInputElement | null>;
@@ -50,7 +55,7 @@ export default function FilterBar({
   onCapacityChange: (id: string, capacity: number) => void;
 }) {
   const [peopleOpen, setPeopleOpen] = useState(false);
-  const hasFilter = Boolean(filterPerson || filterStatus || search.trim());
+  const hasFilter = Boolean(filterPerson || filterStatus || filterMoonmoon || search.trim());
 
   return (
     <div className="relative flex shrink-0 flex-wrap items-center gap-2 border-b border-black/8 px-4 py-2.5 sm:px-6">
@@ -90,6 +95,21 @@ export default function FilterBar({
         <Chevron />
       </span>
 
+      <button
+        type="button"
+        aria-pressed={filterMoonmoon}
+        title="Uniquement les projets Moon-Moon"
+        onClick={() => onFilterMoonmoon(!filterMoonmoon)}
+        className={`flex items-center gap-1.5 rounded-lg py-2 pr-3 pl-2 text-base/6 transition-colors outline -outline-offset-1 focus-visible:outline-2 focus-visible:outline-ink sm:py-1.5 sm:text-sm/6 ${
+          filterMoonmoon
+            ? "bg-ink text-white outline-ink"
+            : "outline-hairline hover:bg-cloud"
+        }`}
+      >
+        <MoonMoonIcon className="size-4" />
+        Moon-Moon
+      </button>
+
       <div className="relative min-w-0 flex-1 max-sm:order-last max-sm:basis-full sm:max-w-64">
         <svg
           viewBox="0 0 16 16"
@@ -123,6 +143,7 @@ export default function FilterBar({
           onClick={() => {
             onFilterPerson("");
             onFilterStatus("");
+            onFilterMoonmoon(false);
             onSearch("");
           }}
           className="rounded-lg px-2 py-1.5 text-sm text-ash hover:bg-cloud hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"

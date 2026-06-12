@@ -46,27 +46,34 @@ float fbm(vec2 p) {
 void main() {
   vec2 uv = gl_FragCoord.xy / u_res;
   vec2 p = (uv - 0.5) * vec2(u_res.x / u_res.y, 1.0);
-  float t = u_t * 0.05;
+  float t = u_t * 0.04;
 
-  // slow fabric waves
+  // slow fabric waves, softened twice over
   vec2 q = vec2(
-    fbm(p * 0.9 + vec2(t * 1.1, t * 0.5)),
-    fbm(p * 0.9 - vec2(t * 0.6, t * 0.9))
+    fbm(p * 0.7 + vec2(t * 1.1, t * 0.5)),
+    fbm(p * 0.7 - vec2(t * 0.6, t * 0.9))
   );
+  q = smoothstep(0.15, 0.85, q);
   vec2 w = q - 0.5;
 
   // the wordmark nearly fills the width, slightly tilted; waves push it like cloth
   vec2 r = mat2(0.9945, -0.1045, 0.1045, 0.9945) * p; // ~6 degrees
   vec2 luv = vec2(r.x * 0.32, r.y * 0.85) + w * vec2(0.10, 0.22);
   float ink = texture2D(u_tex, luv + 0.5).a;
+  ink = smoothstep(0.08, 0.92, ink);
 
   // soft sheen driven by the same field
-  float shade = fbm(p * 1.6 + q * 1.5 - t * 0.8);
-  vec3 col = vec3(0.03) + 0.025 * shade;
-  col += ink * mix(0.22, 0.6, shade);
+  float shade = smoothstep(0.1, 0.9, fbm(p * 1.3 + q * 1.2 - t * 0.8));
+  shade = shade * shade * (3.0 - 2.0 * shade);
+  vec3 col = vec3(0.018) + 0.018 * shade;
+  col += ink * mix(0.13, 0.42, shade);
 
   // vignette
-  col *= 1.0 - 0.6 * smoothstep(0.4, 1.15, length(uv - 0.5) * 1.5);
+  col *= 1.0 - 0.7 * smoothstep(0.35, 1.1, length(uv - 0.5) * 1.5);
+
+  // analog grain
+  float grain = hash(gl_FragCoord.xy + fract(u_t * 0.7) * 191.0);
+  col += (grain - 0.5) * 0.045;
 
   gl_FragColor = vec4(col, 1.0);
 }

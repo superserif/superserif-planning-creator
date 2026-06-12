@@ -39,6 +39,7 @@ export default function LineupApp() {
   const [loaded, setLoaded] = useState(false);
   const [filterPerson, setFilterPerson] = useState("");
   const [filterStatus, setFilterStatus] = useState<Status | "">("");
+  const [filterMoonmoon, setFilterMoonmoon] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -222,6 +223,79 @@ export default function LineupApp() {
     [data.projects, data.people, updateProject],
   );
 
+  /** Duplicate: the copy lands right after the original, same row (same name). */
+  const duplicateProject = useCallback(
+    (id: string) => {
+      const project = data.projects.find((p) => p.id === id);
+      if (!project) return;
+      const duration =
+        dayIndex(project.end_date, rangeStartYear) -
+        dayIndex(project.start_date, rangeStartYear) +
+        1;
+      const start = shiftIso(project.end_date, 2);
+      const end = shiftIso(start, duration - 1);
+      if (project.person_id) {
+        const person = data.people.find((p) => p.id === project.person_id);
+        if (person && isAtCapacity(data.projects, person, start, end)) {
+          setToast({
+            message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
+          });
+          return;
+        }
+      }
+      const copy: Project = {
+        ...project,
+        id: crypto.randomUUID(),
+        start_date: start,
+        end_date: end,
+      };
+      upsertLocal(copy);
+      setSelectedId(copy.id);
+      setBornId(copy.id);
+      setPopover(null);
+      persist(() => store.upsertProject(copy));
+    },
+    [data.projects, data.people, rangeStartYear, store, upsertLocal, persist],
+  );
+
+  const toggleMoonmoon = useCallback(
+    (id: string) => {
+      const project = data.projects.find((p) => p.id === id);
+      if (!project) return;
+      updateProject({ ...project, moonmoon: !project.moonmoon });
+    },
+    [data.projects, updateProject],
+  );
+
+  /** Delete a whole row (all duplicates of a project), one undo for the lot. */
+  const removeProjects = useCallback(
+    (ids: string[]) => {
+      const removed = data.projects.filter((p) => ids.includes(p.id));
+      if (removed.length === 0) return;
+      setData((d) => ({
+        ...d,
+        projects: d.projects.filter((p) => !ids.includes(p.id)),
+      }));
+      setPopover(null);
+      setSelectedId(null);
+      persist(async () => {
+        for (const p of removed) await store.deleteProject(p.id);
+      });
+      setToast({
+        message:
+          removed.length > 1 ? `${removed.length} cases supprimées` : "Projet supprimé",
+        actionLabel: "Annuler",
+        onAction: () => {
+          removed.forEach((p) => upsertLocal(p));
+          persist(async () => {
+            for (const p of removed) await store.upsertProject(p);
+          });
+        },
+      });
+    },
+    [data.projects, store, upsertLocal, persist],
+  );
+
   const removeProject = useCallback(
     (id: string) => {
       const project = data.projects.find((p) => p.id === id);
@@ -302,6 +376,11 @@ export default function LineupApp() {
           searchRef.current?.select();
           return;
         }
+        if (e.key.toLowerCase() === "d" && selectedId) {
+          e.preventDefault();
+          duplicateProject(selectedId);
+          return;
+        }
       }
       const target = e.target as HTMLElement;
       const typing =
@@ -321,7 +400,7 @@ export default function LineupApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editingId, removeProject, addProjectAtCenter]);
+  }, [selectedId, editingId, removeProject, addProjectAtCenter, duplicateProject]);
 
   /* ----- derived ----- */
 
@@ -356,12 +435,15 @@ export default function LineupApp() {
         .flatMap((g) => g.projects)
         .filter((p) => !filterPerson || p.person_id === filterPerson)
         .filter((p) => !filterStatus || p.status === filterStatus)
+        .filter((p) => !filterMoonmoon || p.moonmoon)
         .filter((p) => !q || p.name.toLowerCase().includes(q))
         .map((p) => p.id),
     );
-  }, [groups, filterPerson, filterStatus, search]);
+  }, [groups, filterPerson, filterStatus, filterMoonmoon, search]);
 
-  const filtersActive = Boolean(filterPerson || filterStatus || search.trim());
+  const filtersActive = Boolean(
+    filterPerson || filterStatus || filterMoonmoon || search.trim(),
+  );
 
   const months = useMemo<MonthOption[]>(
     () =>
@@ -406,6 +488,8 @@ export default function LineupApp() {
         people={data.people}
         filterPerson={filterPerson}
         filterStatus={filterStatus}
+        filterMoonmoon={filterMoonmoon}
+        onFilterMoonmoon={setFilterMoonmoon}
         search={search}
         localMode={store.mode === "local"}
         searchRef={searchRef}
@@ -456,6 +540,8 @@ export default function LineupApp() {
           setEditingId(id);
           setPopover(null);
         }}
+        onDuplicate={duplicateProject}
+        onRemoveMany={removeProjects}
         onCommitName={commitName}
         onCenterChange={(label, day) => {
           setCenterLabel(label);
@@ -483,10 +569,8 @@ export default function LineupApp() {
           onClose={() => setPopover(null)}
           onStatus={(status, origin) => setStatus(popoverProject.id, status, origin)}
           onAssign={(personId) => assignPerson(popoverProject.id, personId)}
-          onRename={() => {
-            setEditingId(popoverProject.id);
-            setPopover(null);
-          }}
+          onDuplicate={() => duplicateProject(popoverProject.id)}
+          onToggleMoonmoon={() => toggleMoonmoon(popoverProject.id)}
           onDelete={() => removeProject(popoverProject.id)}
         />
       )}

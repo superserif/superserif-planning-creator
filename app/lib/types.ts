@@ -15,6 +15,8 @@ export interface Project {
   end_date: string; // ISO date YYYY-MM-DD, inclusive
   status: Status;
   person_id: string | null;
+  /** Tag agence Moon-Moon */
+  moonmoon?: boolean;
 }
 
 export interface StatusSpec {

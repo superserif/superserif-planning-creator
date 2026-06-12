@@ -157,7 +157,7 @@ function createSupabaseStore(client: SupabaseClient): Store {
     mode: "supabase",
     async load() {
       const [projects, people] = await Promise.all([
-        client.from("projects").select("id,name,start_date,end_date,status,person_id"),
+        client.from("projects").select("id,name,start_date,end_date,status,person_id,moonmoon"),
         client.from("people").select("id,name,avatar,capacity").order("name"),
       ]);
       if (projects.error) throw projects.error;

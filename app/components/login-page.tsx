@@ -7,12 +7,12 @@ import { reducedMotion } from "@/lib/motion";
 import ShaderBg from "@/components/shader-bg";
 
 const floatLabel =
-  "pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-base/6 text-mute transition-all duration-200 sm:text-sm/6 " +
-  "peer-focus:top-3 peer-focus:translate-y-0 peer-focus:text-[0.6875rem]/4 peer-focus:font-medium peer-focus:text-ash " +
-  "peer-not-placeholder-shown:top-3 peer-not-placeholder-shown:translate-y-0 peer-not-placeholder-shown:text-[0.6875rem]/4 peer-not-placeholder-shown:font-medium peer-not-placeholder-shown:text-ash";
+  "pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-sm/5 text-mute transition-all duration-200 " +
+  "peer-focus:top-1.5 peer-focus:translate-y-0 peer-focus:text-[0.625rem]/3 peer-focus:font-medium peer-focus:text-ash " +
+  "peer-not-placeholder-shown:top-1.5 peer-not-placeholder-shown:translate-y-0 peer-not-placeholder-shown:text-[0.625rem]/3 peer-not-placeholder-shown:font-medium peer-not-placeholder-shown:text-ash";
 
 const floatInput =
-  "peer w-full rounded-lg bg-white px-3.5 pt-6 pb-2 text-base/6 outline -outline-offset-1 outline-hairline placeholder-transparent focus-visible:outline-2 focus-visible:outline-ink sm:text-sm/6";
+  "peer h-10 w-full rounded-lg bg-white px-3.5 pt-4 pb-1 text-sm/5 outline -outline-offset-1 outline-hairline placeholder-transparent focus-visible:outline-2 focus-visible:outline-ink";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -70,12 +70,11 @@ export default function LoginPage() {
 
         <div className="rounded-[20px] bg-white p-8 shadow-float sm:p-10">
           <form onSubmit={submit} aria-label="Connexion">
-            <h1 className="text-2xl font-semibold tracking-tight text-balance">
+            <h1 className="text-center text-2xl font-semibold tracking-tight text-balance">
               Connexion
             </h1>
-            <p className="mt-1.5 text-base/6 text-ash sm:text-sm/6">
-              Lineup<span className="text-rausch">.</span> — le planning du
-              studio.
+            <p className="mt-1.5 text-center text-base/6 text-ash sm:text-sm/6">
+              Le planning du studio.
             </p>
 
             <div className="mt-8 flex flex-col gap-3">
@@ -124,7 +123,7 @@ export default function LoginPage() {
               type="submit"
               data-button-009=""
               disabled={pending}
-              className="button-009 mt-6 w-full text-base font-semibold disabled:opacity-60 sm:text-sm [--button-009-color:#ffffff] [--button-009-color-background:var(--color-rausch)] [--button-009-color-focus:var(--color-ink)] [--button-009-padding-top:0.875em] [--button-009-padding-bottom:0.875em]"
+              className="button-009 mt-6 w-full text-sm font-semibold disabled:opacity-60 [--button-009-color:#ffffff] [--button-009-color-background:var(--color-rausch)] [--button-009-color-focus:var(--color-ink)] [--button-009-padding-top:0.92857em] [--button-009-padding-bottom:0.92857em]"
             >
               <span className="button-009__inner">
                 <svg

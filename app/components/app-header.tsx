@@ -140,16 +140,8 @@ export default function AppHeader({
           type="button"
           onClick={onAddProject}
           title="Nouveau projet (⌘P)"
-          className="flex items-center gap-1.5 rounded-lg bg-rausch py-2 pr-3 pl-2 text-sm font-semibold text-white transition-transform active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rausch"
+          className="rounded-lg bg-rausch px-3 py-2 text-sm font-semibold text-white transition-transform active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rausch"
         >
-          <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0">
-            <path
-              d="M8 3.5v9M3.5 8h9"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
           <span className="max-sm:hidden">Ajouter un projet</span>
           <span className="sm:hidden">Projet</span>
         </button>

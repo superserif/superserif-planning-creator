@@ -17,6 +17,7 @@ create table if not exists projects (
   status text not null default 'devise'
     check (status in ('devise','demarre','termine','archive')),
   person_id uuid references people(id) on delete set null,
+  moonmoon boolean not null default false,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
