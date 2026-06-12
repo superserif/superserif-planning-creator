@@ -173,7 +173,17 @@ Validé en cours de build avec JJ, remplace les sections 5–7 sur ces points :
 
 **Statuts.** « À démarrer » supprimé — le cycle devient : Devisé → Démarré → Terminé → Archivé.
 
-## 14. Critères de done
+## 14. Avenant v1.3 — duplication et tag Moon-Moon
+
+**Duplication.** Un projet se duplique depuis le popover de sa barre (« Dupliquer » remplace « Renommer », le renommage reste au double-clic), au raccourci `⌘D` (case sélectionnée), ou via l'icône double-feuille au survol d'une ligne. La copie se place juste après l'original ; les cases du même nom partagent la même ligne (badge ×n), chacune restant manipulable indépendamment. La duplication respecte les capacités.
+
+**Survols.** Barres : léger scale + ombre portée douce. Lignes de la colonne gauche : fond gris et apparition en stagger de deux icônes — dupliquer, puis poubelle rouge (supprime toutes les cases de la ligne, undo groupé).
+
+**Tag Moon-Moon.** Switch dans le popover ; logo Moon-Moon (jaune sur pastille ink) à côté du nom quand actif ; filtre dédié dans la barre de filtres.
+
+**Login.** Titre centré, sous-titre « Le planning du studio. », champs et CTA à 40 px ; shader plus sombre, courbes adoucies, grain analogique.
+
+## 15. Critères de done
 
 1. Je crée un projet par double-clic, le nomme, le déplace et l'étire — sans jamais voir un formulaire.
 2. Les cinq statuts sont lisibles d'un coup d'œil à 2 m de l'écran.
