@@ -16,7 +16,7 @@ import {
   shiftIso,
   todayIso,
 } from "@/lib/dates";
-import { isAtCapacity, studioLoadPct } from "@/lib/capacity";
+import { isAtCapacity, isOnHoliday, studioLoadPct } from "@/lib/capacity";
 import { celebrateAt } from "@/lib/motion";
 import AppHeader, { type MonthOption, type OverloadAlert } from "@/components/app-header";
 import FilterBar from "@/components/filter-bar";
@@ -166,11 +166,24 @@ export default function LineupApp() {
 
   /* ----- creation ----- */
 
-  const capacityToast = useCallback((person: Person) => {
-    setToast({
-      message: `${person.name} a atteint son maximum sur cette période (${person.capacity})`,
-    });
-  }, []);
+  /** Why a person can't take a task over a window — null when they're free. */
+  const blockReason = useCallback(
+    (
+      person: Person,
+      startIso: string,
+      endIso: string,
+      excludeId?: string,
+    ): string | null => {
+      if (isOnHoliday(data.projects, person.id, startIso, endIso, excludeId)) {
+        return `${person.name} est en congés sur cette période`;
+      }
+      if (isAtCapacity(data.projects, person, startIso, endIso, excludeId)) {
+        return `${person.name} a atteint son maximum sur cette période (${person.capacity})`;
+      }
+      return null;
+    },
+    [data.projects],
+  );
 
   const createRange = useCallback(
     (startDay: number, endDay: number, personId: string | null) => {
@@ -181,9 +194,12 @@ export default function LineupApp() {
       const endIso = isoFromDay(rangeStartYear, end);
       if (personId) {
         const person = data.people.find((p) => p.id === personId);
-        if (person && isAtCapacity(data.projects, person, startIso, endIso)) {
-          capacityToast(person);
-          return;
+        if (person) {
+          const reason = blockReason(person, startIso, endIso);
+          if (reason) {
+            setToast({ message: reason });
+            return;
+          }
         }
       }
       const project: Project = {
@@ -194,6 +210,7 @@ export default function LineupApp() {
         status: "devise",
         assignees: personId ? [personId] : [],
         moonmoon: false,
+        holiday: false,
         hours_done: 0,
         hours_total: null,
       };
@@ -211,7 +228,7 @@ export default function LineupApp() {
         });
       }
     },
-    [rangeStartYear, data.people, data.projects, commit, capacityToast],
+    [rangeStartYear, data.people, commit, blockReason],
   );
 
   const createProject = useCallback(
@@ -277,16 +294,17 @@ export default function LineupApp() {
         return;
       }
       const person = data.people.find((p) => p.id === personId);
-      if (
-        person &&
-        isAtCapacity(data.projects, person, project.start_date, project.end_date, id)
-      ) {
-        capacityToast(person);
-        return;
+      // A holiday can always take someone — it's their absence, not a workload.
+      if (person && !project.holiday) {
+        const reason = blockReason(person, project.start_date, project.end_date, id);
+        if (reason) {
+          setToast({ message: reason });
+          return;
+        }
       }
       updateProject({ ...project, assignees: [...project.assignees, personId] });
     },
-    [findProject, data.people, data.projects, updateProject, capacityToast],
+    [findProject, data.people, updateProject, blockReason],
   );
 
   const setHours = useCallback(
@@ -307,6 +325,15 @@ export default function LineupApp() {
     [findProject, updateProject],
   );
 
+  const toggleHoliday = useCallback(
+    (id: string) => {
+      const project = findProject(id);
+      if (!project) return;
+      updateProject({ ...project, holiday: !project.holiday });
+    },
+    [findProject, updateProject],
+  );
+
   /** Duplicate: the copy lands right after the original, on its own row. */
   const duplicateProject = useCallback(
     (id: string) => {
@@ -318,11 +345,16 @@ export default function LineupApp() {
         1;
       const start = shiftIso(project.end_date, 2);
       const end = shiftIso(start, duration - 1);
-      for (const assigneeId of project.assignees) {
-        const person = data.people.find((p) => p.id === assigneeId);
-        if (person && isAtCapacity(data.projects, person, start, end)) {
-          capacityToast(person);
-          return;
+      if (!project.holiday) {
+        for (const assigneeId of project.assignees) {
+          const person = data.people.find((p) => p.id === assigneeId);
+          if (person) {
+            const reason = blockReason(person, start, end);
+            if (reason) {
+              setToast({ message: reason });
+              return;
+            }
+          }
         }
       }
       const copy: Project = {
@@ -336,7 +368,7 @@ export default function LineupApp() {
       setBornId(copy.id);
       setPopover(null);
     },
-    [findProject, data.people, data.projects, rangeStartYear, commit, capacityToast],
+    [findProject, data.people, rangeStartYear, commit, blockReason],
   );
 
   const removeProjects = useCallback(
@@ -378,9 +410,10 @@ export default function LineupApp() {
       if (dropToNone || dropToOther) {
         const start = shiftIso(project.start_date, delta);
         const end = shiftIso(project.end_date, delta);
-        if (dropToOther) {
-          if (isAtCapacity(data.projects, targetPerson, start, end, id)) {
-            capacityToast(targetPerson);
+        if (dropToOther && !project.holiday) {
+          const reason = blockReason(targetPerson, start, end, id);
+          if (reason) {
+            setToast({ message: reason });
             return; // the bar springs back
           }
         }
@@ -410,7 +443,7 @@ export default function LineupApp() {
       }
       commit(changes);
     },
-    [findProject, data.people, data.projects, selectedIds, updateProject, commit, capacityToast],
+    [findProject, data.people, selectedIds, updateProject, commit, blockReason],
   );
 
   const handleResize = useCallback(
@@ -814,6 +847,7 @@ export default function LineupApp() {
           onSetHours={(done, total) => setHours(popoverProject.id, done, total)}
           onDuplicate={() => duplicateProject(popoverProject.id)}
           onToggleMoonmoon={() => toggleMoonmoon(popoverProject.id)}
+          onToggleHoliday={() => toggleHoliday(popoverProject.id)}
           onDelete={() => removeProjects([popoverProject.id])}
         />
       )}

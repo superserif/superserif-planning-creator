@@ -35,6 +35,11 @@ export function isoFromDay(year: number, day: number): string {
     .slice(0, 10);
 }
 
+/** Weekday of a day index within `year` — 0 = Sunday … 6 = Saturday. */
+export function weekdayOfDay(year: number, day: number): number {
+  return new Date(Date.UTC(year, 0, 1) + day * DAY_MS).getUTCDay();
+}
+
 export function shiftIso(iso: string, days: number): string {
   return new Date(Date.parse(`${iso}T00:00:00Z`) + days * DAY_MS)
     .toISOString()

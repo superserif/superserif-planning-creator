@@ -18,10 +18,33 @@ export function personLoad(
     (p) =>
       p.assignees.includes(personId) &&
       p.id !== excludeId &&
+      !p.holiday &&
       ACTIVE.has(p.status) &&
       p.start_date <= endIso &&
       p.end_date >= startIso,
   ).length;
+}
+
+/**
+ * True when the person is on a holiday overlapping [startIso, endIso].
+ * A holiday makes the person unavailable — no other task can be associated.
+ */
+export function isOnHoliday(
+  projects: Project[],
+  personId: string,
+  startIso: string,
+  endIso: string,
+  excludeId?: string,
+): boolean {
+  return projects.some(
+    (p) =>
+      p.holiday === true &&
+      p.assignees.includes(personId) &&
+      p.id !== excludeId &&
+      ACTIVE.has(p.status) &&
+      p.start_date <= endIso &&
+      p.end_date >= startIso,
+  );
 }
 
 export function isAtCapacity(
@@ -31,6 +54,7 @@ export function isAtCapacity(
   endIso: string,
   excludeId?: string,
 ): boolean {
+  if (isOnHoliday(projects, person.id, startIso, endIso, excludeId)) return true;
   return personLoad(projects, person.id, startIso, endIso, excludeId) >= person.capacity;
 }
 

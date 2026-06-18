@@ -22,6 +22,7 @@ import {
   isoFromDay,
   monthSpansRange,
   todayIso,
+  weekdayOfDay,
 } from "@/lib/dates";
 import { isAtCapacity, personLoad, studioLoadPct } from "@/lib/capacity";
 import { reducedMotion } from "@/lib/motion";
@@ -493,6 +494,16 @@ const Gantt = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flatProjects, peopleKey, totalDays, rangeStartYear]);
 
+  /** Saturday+Sunday blocks (in day units) for the timeline backdrop. */
+  const weekends = useMemo(() => {
+    const blocks: { start: number; days: number }[] = [];
+    const firstSat = (6 - weekdayOfDay(rangeStartYear, 0) + 7) % 7;
+    for (let d = firstSat; d < totalDays; d += 7) {
+      blocks.push({ start: d, days: Math.min(2, totalDays - d) });
+    }
+    return blocks;
+  }, [rangeStartYear, totalDays]);
+
   const snapByPerson = useMemo(() => {
     const map = new Map<string, { id: string; day: number }[]>();
     for (const p of flatProjects) {
@@ -756,6 +767,14 @@ const Gantt = forwardRef<
                 />
               ) : null,
             )}
+            {dayWidth > 1.5 &&
+              weekends.map((w) => (
+                <div
+                  key={w.start}
+                  className="absolute inset-y-0 bg-black/[0.035]"
+                  style={{ left: w.start * dayWidth, width: w.days * dayWidth }}
+                />
+              ))}
             {dayWidth > 4 &&
               Array.from({ length: Math.floor((totalDays - 1) / 7) }, (_, i) => (
                 <div

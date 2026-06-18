@@ -23,6 +23,7 @@ export default function ProjectPopover({
   onSetHours,
   onDuplicate,
   onToggleMoonmoon,
+  onToggleHoliday,
   onDelete,
 }: {
   project: Project;
@@ -36,6 +37,7 @@ export default function ProjectPopover({
   onSetHours: (done: number | null, total: number | null) => void;
   onDuplicate: () => void;
   onToggleMoonmoon: () => void;
+  onToggleHoliday: () => void;
   onDelete: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -196,6 +198,37 @@ export default function ProjectPopover({
               </span>
             ) : null}
           </div>
+        </div>
+
+        <div className="border-t border-black/6 px-2 py-2">
+          <label className="flex cursor-pointer items-center gap-2.5">
+            <svg viewBox="0 0 16 16" fill="none" className="size-4 shrink-0 text-warn">
+              <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.4" />
+              <path
+                d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="min-w-0 flex-1 truncate text-sm">
+              Congés
+              <span className="block text-xs font-normal text-ash">
+                Bloque toute autre assignation
+              </span>
+            </span>
+            <span className="group relative inline-flex w-9 shrink-0 self-start rounded-full bg-black/10 p-0.5 inset-ring inset-ring-black/5 outline-offset-2 transition-colors duration-200 ease-in-out outline-ink has-checked:bg-warn has-focus-visible:outline-2">
+              <span className="aspect-square w-1/2 rounded-full bg-white shadow-xs ring-1 ring-black/5 transition-transform duration-200 ease-in-out group-has-checked:translate-x-full"></span>
+              <input
+                type="checkbox"
+                name="holiday"
+                aria-label="Congés"
+                checked={Boolean(project.holiday)}
+                onChange={onToggleHoliday}
+                className="absolute inset-0 size-full appearance-none focus:outline-hidden"
+              />
+            </span>
+          </label>
         </div>
 
         <div className="border-t border-black/6 px-2 py-2">

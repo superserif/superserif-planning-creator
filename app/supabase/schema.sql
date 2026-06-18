@@ -19,6 +19,7 @@ create table if not exists projects (
   person_id uuid references people(id) on delete set null, -- hérité, remplacé par assignees
   assignees uuid[] not null default '{}',
   moonmoon boolean not null default false,
+  holiday boolean not null default false, -- congés : bloque toute autre association
   hours_done int not null default 0,
   hours_total int,
   created_at timestamptz default now(),
@@ -30,6 +31,9 @@ create table if not exists app_settings (
   key text primary key,
   value text not null
 );
+
+-- Migration : ajoute la colonne « congés » sur une base déjà créée.
+alter table projects add column if not exists holiday boolean not null default false;
 
 create or replace function set_updated_at()
 returns trigger language plpgsql as $$

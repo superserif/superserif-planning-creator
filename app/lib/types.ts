@@ -21,6 +21,8 @@ export interface Project {
   /** Heures consommées / vendues — alimentées plus tard par l'API */
   hours_done?: number | null;
   hours_total?: number | null;
+  /** Congés / absence — bloque toute autre association sur la période */
+  holiday?: boolean;
 }
 
 export interface StatusSpec {
@@ -71,8 +73,17 @@ export const STATUSES: Record<Status, StatusSpec> = {
   },
 };
 
-/** Moon-Moon swaps the "En cours" ink for the agency lime. */
+/** Congés / Moon-Moon override the status colours. */
 export function barSpec(project: Project): StatusSpec {
+  if (project.holiday) {
+    return {
+      label: "Congés",
+      bar: "bg-warn-soft text-warn outline -outline-offset-1 outline-warn/25",
+      dot: "bg-warn",
+      mini: "bg-warn/50",
+      outsideText: "text-warn",
+    };
+  }
   if (project.status === "demarre" && project.moonmoon) {
     return {
       ...STATUSES.demarre,

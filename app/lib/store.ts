@@ -96,6 +96,7 @@ function createLocalStore(): Store {
           const p: Project = {
             ...raw,
             assignees: raw.assignees ?? (legacy.person_id ? [legacy.person_id] : []),
+            holiday: raw.holiday ?? false,
           };
           return (p.status as string) === "a_demarrer" ? { ...p, status: "devise" } : p;
         });
@@ -159,26 +160,49 @@ function createLocalStore(): Store {
 }
 
 function createSupabaseStore(client: SupabaseClient): Store {
+  const BASE_COLS =
+    "id,name,start_date,end_date,status,assignees,moonmoon,hours_done,hours_total";
+  // Flips to false the first time the DB tells us the `holiday` column is absent,
+  // so the app keeps working before the migration is applied.
+  let hasHoliday = true;
+  const missingColumn = (error: { code?: string } | null) => error?.code === "42703";
+  const stripHoliday = (p: Project) => {
+    const copy = { ...p };
+    delete copy.holiday;
+    return copy;
+  };
+
   return {
     mode: "supabase",
     async load() {
-      const [projects, people] = await Promise.all([
-        client
-          .from("projects")
-          .select(
-            "id,name,start_date,end_date,status,assignees,moonmoon,hours_done,hours_total",
-          ),
-        client.from("people").select("id,name,avatar,capacity").order("name"),
-      ]);
+      const loadProjects = () =>
+        client.from("projects").select(hasHoliday ? `${BASE_COLS},holiday` : BASE_COLS);
+      let projects = await loadProjects();
+      if (projects.error && hasHoliday && missingColumn(projects.error)) {
+        hasHoliday = false;
+        projects = await loadProjects();
+      }
+      const people = await client
+        .from("people")
+        .select("id,name,avatar,capacity")
+        .order("name");
       if (projects.error) throw projects.error;
       if (people.error) throw people.error;
       return {
-        projects: (projects.data ?? []) as Project[],
+        projects: (projects.data ?? []) as unknown as Project[],
         people: (people.data ?? []) as Person[],
       };
     },
     async upsertProject(p) {
-      const { error } = await client.from("projects").upsert(p);
+      const { error } = await client
+        .from("projects")
+        .upsert(hasHoliday ? p : stripHoliday(p));
+      if (error && hasHoliday && missingColumn(error)) {
+        hasHoliday = false;
+        const retry = await client.from("projects").upsert(stripHoliday(p));
+        if (retry.error) throw retry.error;
+        return;
+      }
       if (error) throw error;
     },
     async deleteProject(id) {
