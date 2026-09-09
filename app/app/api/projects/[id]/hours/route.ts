@@ -4,6 +4,7 @@ import {
   CORS_HEADERS,
   loadPeopleNames,
   PROJECT_COLUMNS,
+  round2,
   shapeProject,
 } from "@/lib/api";
 
@@ -11,8 +12,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/projects/:id/hours
- * Body JSON : { "done": 24 } — optionnel : { "total": 86 }
+ * Body JSON : { "done": 24.5 } — optionnel : { "total": 86 }. Décimales OK (2 max).
  * Réservé aux projets « En cours » (status demarre).
+ * ⚠ Écrase le total — pour pointer du temps depuis un appareil, préférer
+ * POST /api/sessions (le serveur accumule, pas d'écrasement croisé).
  */
 export async function POST(
   request: Request,
@@ -29,7 +32,7 @@ export async function POST(
     );
   }
 
-  const done = typeof body.done === "number" && body.done >= 0 ? Math.round(body.done) : null;
+  const done = typeof body.done === "number" && body.done >= 0 ? round2(body.done) : null;
   const total =
     typeof body.total === "number" && body.total > 0 ? Math.round(body.total) : undefined;
   if (done === null && total === undefined) {
