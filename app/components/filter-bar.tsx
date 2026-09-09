@@ -69,7 +69,7 @@ export default function FilterBar({
           onChange={(e) => onFilterPerson(e.target.value)}
           className={selectClasses}
         >
-          <option value="">Toutes les personnes</option>
+          <option value="">Personnes</option>
           {people.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -87,7 +87,7 @@ export default function FilterBar({
           onChange={(e) => onFilterStatus(e.target.value as Status | "")}
           className={selectClasses}
         >
-          <option value="">Tous les statuts</option>
+          <option value="">Statuts</option>
           {STATUS_ORDER.map((s) => (
             <option key={s} value={s}>
               {STATUSES[s].label}

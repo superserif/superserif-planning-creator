@@ -641,7 +641,8 @@ export default function LineupApp() {
     return new Set(
       inRangeProjects
         .filter((p) => !filterPerson || p.assignees.includes(filterPerson))
-        .filter((p) => !filterStatus || p.status === filterStatus)
+        // Les archivés n'apparaissent que si on filtre explicitement sur « Archivé ».
+        .filter((p) => (filterStatus ? p.status === filterStatus : p.status !== "archive"))
         .filter((p) => !filterMoonmoon || p.moonmoon)
         .filter((p) => !q || p.name.toLowerCase().includes(q))
         .map((p) => p.id),
