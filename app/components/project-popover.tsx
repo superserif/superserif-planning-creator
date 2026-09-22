@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { animate } from "animejs";
 import type { Person, Project, Status } from "@/lib/types";
 import { STATUSES, STATUS_ORDER } from "@/lib/types";
@@ -42,6 +42,19 @@ export default function ProjectPopover({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Le panneau s'ouvre sous le point de clic ; s'il déborde en bas de la
+  // fenêtre, il bascule au-dessus. Mesuré sur la vraie hauteur, avant peinture.
+  const [placement, setPlacement] = useState<{ top: number; flipped: boolean }>({
+    top: Math.max(8, y + 8),
+    flipped: false,
+  });
+  useLayoutEffect(() => {
+    const height = panelRef.current?.offsetHeight ?? 0;
+    if (y + 8 + height > window.innerHeight - 8) {
+      setPlacement({ top: Math.max(8, y - 8 - height), flipped: true });
+    }
+  }, [y]);
+
   useEffect(() => {
     if (!panelRef.current || reducedMotion()) return;
     animate(panelRef.current, {
@@ -61,8 +74,32 @@ export default function ProjectPopover({
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [onClose]);
 
+  // Les heures sont saisies localement et validées sur blur, Entrée, et à la
+  // fermeture du panneau. Le blur seul ne suffit pas : quand un clic extérieur
+  // ferme le panneau, l'input est démonté avant que le blur ne parte et la
+  // saisie était perdue.
+  const [doneStr, setDoneStr] = useState(String(project.hours_done ?? 0));
+  const [totalStr, setTotalStr] = useState(
+    project.hours_total == null ? "" : String(project.hours_total),
+  );
+  const commitHours = () => {
+    const done = doneStr === "" ? 0 : Math.max(0, Number(doneStr));
+    const total = totalStr === "" ? null : Math.max(0, Number(totalStr));
+    if (Number.isNaN(done) || (total !== null && Number.isNaN(total))) return;
+    const prevDone = Number(project.hours_done ?? 0);
+    const prevTotal = project.hours_total == null ? null : Number(project.hours_total);
+    if (done !== prevDone || total !== prevTotal) onSetHours(done, total);
+  };
+  const commitHoursRef = useRef(commitHours);
+  useEffect(() => {
+    commitHoursRef.current = commitHours;
+  });
+  useEffect(() => () => commitHoursRef.current(), []);
+  const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  };
+
   const left = Math.min(Math.max(8, x - WIDTH / 2), window.innerWidth - WIDTH - 8);
-  const top = Math.min(y + 8, window.innerHeight - 380);
 
   return (
     <>
@@ -70,8 +107,8 @@ export default function ProjectPopover({
         ref={panelRef}
         role="dialog"
         aria-label={`Projet ${project.name || "sans titre"}`}
-        className="fixed z-50 origin-top rounded-xl bg-white p-2 shadow-float"
-        style={{ left, top: Math.max(8, top), width: WIDTH }}
+        className={`fixed z-50 rounded-xl bg-white p-2 shadow-float ${placement.flipped ? "origin-bottom" : "origin-top"}`}
+        style={{ left, top: placement.top, width: WIDTH }}
       >
         <div className="px-2 pt-1 pb-2">
           <p className="truncate text-sm font-semibold">
@@ -166,13 +203,11 @@ export default function ProjectPopover({
               name="hours-done"
               aria-label="Heures réalisées"
               min={0}
-              defaultValue={project.hours_done ?? 0}
-              onBlur={(e) =>
-                onSetHours(
-                  e.target.value === "" ? 0 : Math.max(0, Number(e.target.value)),
-                  project.hours_total ?? null,
-                )
-              }
+              step="any"
+              value={doneStr}
+              onChange={(e) => setDoneStr(e.target.value)}
+              onBlur={commitHours}
+              onKeyDown={blurOnEnter}
               className="w-16 rounded-lg px-2 py-1 text-sm tabular-nums outline -outline-offset-1 outline-hairline focus-visible:outline-2 focus-visible:outline-ink"
             />
             <span className="text-sm text-mute">/</span>
@@ -181,14 +216,12 @@ export default function ProjectPopover({
               name="hours-total"
               aria-label="Heures vendues"
               min={0}
-              defaultValue={project.hours_total ?? ""}
+              step="any"
+              value={totalStr}
+              onChange={(e) => setTotalStr(e.target.value)}
               placeholder="—"
-              onBlur={(e) =>
-                onSetHours(
-                  project.hours_done ?? 0,
-                  e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                )
-              }
+              onBlur={commitHours}
+              onKeyDown={blurOnEnter}
               className="w-16 rounded-lg px-2 py-1 text-sm tabular-nums outline -outline-offset-1 outline-hairline placeholder:text-mute focus-visible:outline-2 focus-visible:outline-ink"
             />
             <span className="text-sm text-mute">h</span>
